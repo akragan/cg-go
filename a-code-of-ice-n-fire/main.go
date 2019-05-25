@@ -1191,7 +1191,10 @@ func buildMinesAndTowers(s *State) {
 	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
 		s.Me.NbTowers < 5 && s.Me.Gold > CostTower {
 		pos := s.Op.MinDistGoal
-		for (pos.getCell(s.Grid) != CellMeA || pos.getCell(s.UnitGrid) != CellNeutral) && !pos.sameAs(g.Me.Hq) {
+		for (pos.getCell(s.Grid) != CellMeA ||
+			pos.getCell(s.UnitGrid) != CellNeutral ||
+			pos.getCell(g.MineGrid) == CellMine) &&
+			!pos.sameAs(g.Me.Hq) {
 			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 		}
 		if !pos.sameAs(g.Me.Hq) && !pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
