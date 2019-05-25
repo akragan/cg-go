@@ -674,6 +674,31 @@ func (s *State) addTrain(at *Position, level int) {
 	}
 	s.Me.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
 	s.Me.addActiveArea(at)
+
+	// mini-chain train when facing opponent territory
+	// for now only:
+	// * level 3
+	// * unnocuppied op cells (try train 1)
+	// * l1 occupied (try train 2)
+	if level == 3 {
+		for _, dir := range DirDRUL {
+			nbrPos := at.neighbour(dir)
+			if nbrPos == nil {
+				continue
+			}
+			nbrCell := nbrPos.getCell(s.Grid)
+			nbrUnit := nbrPos.getCell(s.UnitGrid)
+			if (nbrCell == CellOpA || nbrCell == CellOpM) && nbrUnit == CellNeutral {
+				if costTrain(1) < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
+					s.addTrain(nbrPos, 1)
+				}
+			} else if (nbrCell == CellOpA || nbrCell == CellOpM) && nbrUnit == CellOpU {
+				if costTrain(2) < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
+					s.addTrain(nbrPos, 2)
+				}
+			}
+		}
+	}
 }
 
 func (s *State) action() string {
