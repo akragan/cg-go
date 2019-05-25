@@ -73,10 +73,11 @@ const (
 	DirRight = 2
 	DirDown  = 3
 
-	Min1      = 3
-	Min2      = 2
-	MaxTowers = 5
-	MaxMines  = 2
+	Min1         = 3
+	Min2         = 2
+	MaxTowers    = 10
+	MaxTowersMid = 5
+	MaxMines     = 2
 
 	TrainWedgeBonus   = 3
 	TrainOpAlertBonus = 1
@@ -1216,10 +1217,16 @@ func buildMinesAndTowers(s *State) {
 			!pos.sameAs(g.Me.Hq) {
 			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 		}
-		if !pos.sameAs(g.Me.Hq) &&
-			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
-			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
-			s.addBuildTower(pos)
+		if !pos.sameAs(g.Me.Hq) {
+			if s.Me.NbTowers < MaxTowersMid {
+				if !pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
+					!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
+					s.addBuildTower(pos)
+				}
+			} else if pos.findNeighbour(s.Grid, CellMeT) == -1 &&
+				pos.findNeighbour(s.Grid, CellMeNT) == -1 {
+				s.addBuildTower(pos)
+			}
 		}
 	}
 	// build mine near HQ
