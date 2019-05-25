@@ -160,6 +160,16 @@ func (this *Position) setIntCell(intGrid [][]int, cell int) {
 	intGrid[this.Y][this.X] = cell
 }
 
+func (this *Position) findNeighbourDir(intGrid [][]int, dist int) int {
+	for _, dir := range DirDRUL {
+		nbrPos := this.neighbour(dir)
+		if nbrPos != nil && nbrPos.getIntCell(g.DistGrid) == dist {
+			return dir
+		}
+	}
+	return -1
+}
+
 func (this *Position) set(x int, y int) *Position {
 	this.X = x
 	this.Y = y
@@ -275,6 +285,7 @@ type Game struct {
 	HqOp        *Position
 	InitNeutral int
 	DistGrid    [][]int
+	DirGrid     [][]int
 	TurnTime    time.Time
 	RespTime    time.Time
 }
@@ -285,9 +296,11 @@ func initGame() {
 	g.Mines = make([]*Position, g.NbMines)
 	g.MineGrid = make([][]rune, GridDim)
 	g.DistGrid = make([][]int, GridDim)
+	g.DirGrid = make([][]int, GridDim)
 	for i := 0; i < GridDim; i++ {
 		g.MineGrid[i] = []rune(RowNeutral)
 		g.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
 	}
 	for i := 0; i < g.NbMines; i++ {
 		mine := &Position{}
@@ -310,6 +323,9 @@ func initDistGrid(grid [][]rune) {
 			pos.setIntCell(g.DistGrid, InfDist)
 		} else {
 			pos.setIntCell(g.DistGrid, pos.Dist)
+			if pos.Dist != 0 {
+				pos.setIntCell(g.DirGrid, pos.findNeighbourDir(g.DistGrid, pos.Dist-1))
+			}
 			for _, dir := range DirDRUL {
 				nbrPos := pos.neighbour(dir)
 				if nbrPos != nil && nbrPos.getIntCell(g.DistGrid) == -1 {
@@ -321,14 +337,16 @@ func initDistGrid(grid [][]rune) {
 		} // if/else cell void
 		//printDistGrid()
 	} // for queue non-empty
-	printDistGrid()
+	printIntGrid("DistGrid", g.DistGrid)
+	printIntGrid("DirGrid", g.DirGrid)
 }
 
-func printDistGrid() {
+func printIntGrid(label string, grid [][]int) {
+	fmt.Fprintf(os.Stderr, "%s:\n", label)
 	for i := 0; i < GridDim; i++ {
 		line := ""
 		for j := 0; j < GridDim; j++ {
-			line += fmt.Sprintf("%d ", g.DistGrid[i][j])
+			line += fmt.Sprintf("%d ", grid[i][j])
 		}
 		fmt.Fprintf(os.Stderr, "%v\n", line)
 	}
@@ -537,7 +555,7 @@ func (s *State) addTrain(at *Position, level int) {
 	case 3:
 		s.Me.Gold -= CostTrain3
 	}
-	s.Me.addUnit(&Unit{IdMe, -1, level, at.X, at.Y})
+	s.Me.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
 }
 
 func (s *State) action() string {
@@ -560,7 +578,7 @@ func (s *State) action() string {
 			cmdsStr += fmt.Sprintf("BUILD TOWER %d %d", cmd.X, cmd.Y)
 		}
 	}
-	cmdsStr += fmt.Sprintf(";MSG A:%d U:%d I:%d", s.Me.ActiveArea, s.Me.NbUnits, s.Me.income())
+	cmdsStr += fmt.Sprintf(";MSG A:%d U:%d I:%d", s.Me.ActiveArea, s.Me.Upkeep, s.Me.income())
 	return cmdsStr
 }
 
@@ -768,7 +786,7 @@ func moveUnits(s *State) {
 			// standing my ground if faced with uncapturable enemy (lvl2 right now)
 			// i.e. issuing invalid move command on purpose
 			if u.Level == 2 && unitCell == CellOpU2 {
-				candidateCmds.appendMove(u, pos, pos, 1)
+				candidateCmds.appendMove(u, pos, pos, 0)
 				continue
 			}
 
@@ -805,7 +823,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.DistGrid))
 		}
 		// consider level 2
-		if s.Me.income() > 2*CostKeep2 &&
+		if s.Me.NbUnits < 5*s.Op.NbUnits &&
+			s.Me.income() > 2*CostKeep2 &&
 			s.Me.Gold > CostTrain2 {
 			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.DistGrid))
 		}
@@ -838,7 +857,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 6)
 			}
 			// consider level 2
-			if s.Me.income() > 2*CostKeep2 &&
+			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 4)
 			}
@@ -857,7 +877,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 9)
 			}
 			// consider level 2
-			if s.Me.income() > 2*CostKeep2 &&
+			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 8)
 			}
@@ -871,7 +892,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrUnitCell == CellOpU {
 			// consider level 2 and 3
-			if s.Me.income() > 2*CostKeep2 &&
+			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 11)
 			}
@@ -908,7 +930,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 15)
 			}
 			// consider level 2
-			if s.Me.income() > 2*CostKeep2 &&
+			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 15)
 			}
@@ -953,7 +976,8 @@ func trainUnits(s *State) {
 	fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
 	for i, cmd := range candidateCmds.Candidates {
 		cost := costTrain(cmd.Level)
-		if cost < s.Me.Gold {
+		fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
+		if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
 			s.addTrain(cmd.To, cmd.Level)
 			fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		} else {
