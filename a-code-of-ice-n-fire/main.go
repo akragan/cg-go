@@ -837,13 +837,8 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op inactive TOWER capturing moves (only by l3 unit)
-			// - severe penalty when guarded by op l3
 			if u.Level == 3 && nbrCell == CellOpNT && !myUnitCell(unitCell) {
-				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 17)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 3)
-				}
+				candidateCmds.appendMove(u, pos, nbrPos, 17)
 				continue
 			}
 			// Op unit l3 capturing moves (only by l3 unit)
@@ -852,13 +847,8 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op unit l2 capturing moves (only by l3 unit)
-			// - penalty when guarded by op l3
 			if u.Level == 3 && unitCell == CellOpU2 && !myUnitCell(unitCell) {
-				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 15)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 12)
-				}
+				candidateCmds.appendMove(u, pos, nbrPos, 15)
 				continue
 			}
 			// Op active MINE capturing moves (by any unit)
@@ -867,76 +857,50 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op unit l1 capturing moves (by l3 unit)
-			// - penalty when guarded by op l3
 			if u.Level == 3 && unitCell == CellOpU && !myUnitCell(unitCell) {
-				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 12)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 6)
-				}
-				//s.addMove(u, pos, nbrPos)
+				candidateCmds.appendMove(u, pos, nbrPos, 12)
 				continue
 			}
 			// Op unit l1 capturing moves (by l2 unit)
-			// - penalty when guarded by op l3
 			if u.Level == 2 && unitCell == CellOpU && !myUnitCell(unitCell) {
-				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 13)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 7)
-				}
-				//s.addMove(u, pos, nbrPos)
+				candidateCmds.appendMove(u, pos, nbrPos, 13)
 				continue
 			}
 			// Op INactive MINE capturing moves (by any unit)
-			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellOpNM && !myUnitCell(unitCell) {
-				if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 12)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 3)
-				}
+				candidateCmds.appendMove(u, pos, nbrPos, 12)
 				continue
 			}
 			// Op active land capturing moves (by any unit)
 			// ++ priority for cells splitting Op territory
 			// + priority for cells keeping my territory compact
-			// - penalty with l3 whn guarded by op l3
 			if nbrCell == CellOpA && !anyUnitCell(unitCell) {
 				if isWedge(nbrPos, s.Grid) {
 					candidateCmds.appendMove(u, pos, nbrPos, 11)
 				} else if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 10)
-				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 9)
 				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 3)
+					candidateCmds.appendMove(u, pos, nbrPos, 9)
 				}
 				continue
 			}
 			// Op INactive land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
-			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellOpNA && !myUnitCell(unitCell) {
 				if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 8)
-				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 7)
 				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 3)
+					candidateCmds.appendMove(u, pos, nbrPos, 7)
 				}
 				continue
 			}
 			// new land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
-			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellNeutral && !myUnitCell(unitCell) {
 				if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 5)
-				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, 4)
 				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, 2)
+					candidateCmds.appendMove(u, pos, nbrPos, 4)
 				}
 				continue
 			}
@@ -953,11 +917,7 @@ func moveUnits(s *State) {
 			if nbrCell == CellMeA && !myUnitCell(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
-				if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
-					candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
-				} else {
-					candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist-1)
-				}
+				candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
 				continue
 			}
 		} //for dir
