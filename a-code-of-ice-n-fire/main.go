@@ -75,8 +75,8 @@ const (
 
 	Min1         = 3
 	Min2         = 2
-	MaxTowers    = 10
-	MaxTowersMid = 5
+	MaxTowers    = 7
+	MaxTowersMid = 4
 	MaxMines     = 2
 
 	TrainWedgeBonus   = 3
