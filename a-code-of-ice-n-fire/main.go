@@ -834,8 +834,13 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op inactive TOWER capturing moves (only by l3 unit)
+			// - severe penalty when guarded by op l3
 			if u.Level == 3 && nbrCell == CellOpNT && !myUnitCell(unitCell) {
-				candidateCmds.appendMove(u, pos, nbrPos, 17)
+				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, 17)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 3)
+				}
 				continue
 			}
 			// Op unit l3 capturing moves (only by l3 unit)
@@ -844,8 +849,13 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op unit l2 capturing moves (only by l3 unit)
+			// - penalty when guarded by op l3
 			if u.Level == 3 && unitCell == CellOpU2 && !myUnitCell(unitCell) {
-				candidateCmds.appendMove(u, pos, nbrPos, 15)
+				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, 15)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 12)
+				}
 				continue
 			}
 			// Op active MINE capturing moves (by any unit)
@@ -853,47 +863,77 @@ func moveUnits(s *State) {
 				candidateCmds.appendMove(u, pos, nbrPos, 14)
 				continue
 			}
-			// Op unit l1 capturing moves (only by any l2 or l3 unit)
-			if (u.Level == 3 || u.Level == 2) && unitCell == CellOpU && !myUnitCell(unitCell) {
-				candidateCmds.appendMove(u, pos, nbrPos, 13)
+			// Op unit l1 capturing moves (by l3 unit)
+			// - penalty when guarded by op l3
+			if u.Level == 3 && unitCell == CellOpU && !myUnitCell(unitCell) {
+				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, 12)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 6)
+				}
+				//s.addMove(u, pos, nbrPos)
+				continue
+			}
+			// Op unit l1 capturing moves (by l2 unit)
+			// - penalty when guarded by op l3
+			if u.Level == 2 && unitCell == CellOpU && !myUnitCell(unitCell) {
+				if nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, 13)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 7)
+				}
 				//s.addMove(u, pos, nbrPos)
 				continue
 			}
 			// Op INactive MINE capturing moves (by any unit)
+			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellOpNM && !myUnitCell(unitCell) {
-				candidateCmds.appendMove(u, pos, nbrPos, 12)
+				if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, 12)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 3)
+				}
 				continue
 			}
 			// Op active land capturing moves (by any unit)
 			// ++ priority for cells splitting Op territory
 			// + priority for cells keeping my territory compact
+			// - penalty with l3 whn guarded by op l3
 			if nbrCell == CellOpA && !anyUnitCell(unitCell) {
 				if isWedge(nbrPos, s.Grid) {
 					candidateCmds.appendMove(u, pos, nbrPos, 11)
 				} else if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 10)
-				} else {
+				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 9)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 3)
 				}
 				continue
 			}
 			// Op INactive land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
+			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellOpNA && !myUnitCell(unitCell) {
 				if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 8)
-				} else {
+				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 7)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 3)
 				}
 				continue
 			}
 			// new land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
+			// - penalty with l3 when guarded by op l3
 			if nbrCell == CellNeutral && !myUnitCell(unitCell) {
 				if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 5)
-				} else {
+				} else if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 4)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 2)
 				}
 				continue
 			}
@@ -910,7 +950,11 @@ func moveUnits(s *State) {
 			if nbrCell == CellMeA && !myUnitCell(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
-				candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
+				if u.Level != 3 || nbrPos.findNeighbour(s.UnitGrid, CellOpU3) == -1 {
+					candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist-1)
+				}
 				continue
 			}
 		} //for dir
@@ -962,9 +1006,9 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			continue
 		}
 		nbrUnitCell := nbrPos.getCell(s.UnitGrid)
-		bonus := 0
+		wedgeBonus := 0
 		if isWedge(nbrPos, s.Grid) {
-			bonus += 10
+			wedgeBonus += 10
 		}
 
 		if (nbrCell == CellNeutral || nbrCell == CellOpNA || nbrCell == CellOpNM || nbrCell == CellOpNT) &&
@@ -972,19 +1016,19 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			// consider level 1
 			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-				cmds.appendTrain(1, nbrPos, 6+bonus)
+				cmds.appendTrain(1, nbrPos, 6+wedgeBonus)
 			}
 			// consider level 2
 			if s.Me.NbUnits < 3*s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
-				cmds.appendTrain(2, nbrPos, 4+bonus)
+				cmds.appendTrain(2, nbrPos, 4+wedgeBonus)
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 5+bonus)
+				cmds.appendTrain(3, nbrPos, 5+wedgeBonus)
 			}
 		}
 
@@ -992,19 +1036,19 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			// consider level 1
 			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-				cmds.appendTrain(1, nbrPos, 9+bonus)
+				cmds.appendTrain(1, nbrPos, 9+wedgeBonus)
 			}
 			// consider level 2
 			if (s.Me.NbUnits < 3*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
-				cmds.appendTrain(2, nbrPos, 8+bonus)
+				cmds.appendTrain(2, nbrPos, 8+wedgeBonus)
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 7+bonus)
+				cmds.appendTrain(3, nbrPos, 7+wedgeBonus)
 			}
 		}
 
@@ -1013,13 +1057,13 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			if (s.Me.NbUnits < 3*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
-				cmds.appendTrain(2, nbrPos, 11+bonus)
+				cmds.appendTrain(2, nbrPos, 11+wedgeBonus)
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 10+bonus)
+				cmds.appendTrain(3, nbrPos, 10+wedgeBonus)
 			}
 		}
 
@@ -1028,7 +1072,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 12+bonus)
+				cmds.appendTrain(3, nbrPos, 12+wedgeBonus)
 			}
 		}
 
@@ -1037,7 +1081,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 13+bonus)
+				cmds.appendTrain(3, nbrPos, 13+wedgeBonus)
 			}
 		}
 
