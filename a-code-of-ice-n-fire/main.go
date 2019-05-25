@@ -444,8 +444,11 @@ func (s *State) init(turn int) {
 					// set Op tower-protected cells
 					for _, dir := range DirDRUL {
 						nbrPos := bPos.neighbour(dir)
-						if nbrPos != nil && nbrPos.getCell(s.Grid) == CellOpA {
-							nbrPos.setCell(s.Grid, CellOpP)
+						if nbrPos != nil {
+							nbrCell := nbrPos.getCell(s.Grid)
+							if nbrCell == CellOpA || nbrCell == CellOpM || nbrCell == CellOpH {
+								nbrPos.setCell(s.Grid, CellOpP)
+							}
 						}
 					}
 				} else {
@@ -781,7 +784,7 @@ func moveUnits(s *State) {
 		} //for dir
 		// pick the best move for unit
 		if bestCmd := candidateCmds.best(); bestCmd != nil {
-			fmt.Fprintf(os.Stderr, "Unit:%d, Candidates:%d, Best:%d X:%d Y:%d\n", bestCmd.Unit.Id, len(candidateCmds.Candidates), bestCmd.Value, bestCmd.To.X, bestCmd.To.Y)
+			//fmt.Fprintf(os.Stderr, "Unit:%d, Candidates:%d, Best:%d X:%d Y:%d\n", bestCmd.Unit.Id, len(candidateCmds.Candidates), bestCmd.Value, bestCmd.To.X, bestCmd.To.Y)
 			s.addMove(bestCmd.Unit, bestCmd.From, bestCmd.To)
 		}
 	}
@@ -794,6 +797,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 	unitCell := pos.getCell(s.UnitGrid)
 
 	if cell == CellMeA && unitCell == CellNeutral {
+		// copy pos
+		pos := &Position{X: pos.X, Y: pos.Y}
 		// consider level 1
 		if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 			s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
@@ -854,17 +859,22 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			// consider level 2
 			if s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
-				cmds.appendTrain(2, nbrPos, 7)
+				cmds.appendTrain(2, nbrPos, 8)
 			}
 			// consider level 3
 			if s.Me.NbUnits >= s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 6)
+				cmds.appendTrain(3, nbrPos, 7)
 			}
 		}
 
-		if nbrUnitCell == CellOpU2 {
+		if nbrUnitCell == CellOpU {
+			// consider level 2 and 3
+			if s.Me.income() > 2*CostKeep2 &&
+				s.Me.Gold > CostTrain2 {
+				cmds.appendTrain(2, nbrPos, 11)
+			}
 			// consider level 3
 			if s.Me.NbUnits >= s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep3 &&
@@ -873,12 +883,21 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			}
 		}
 
+		if nbrUnitCell == CellOpU2 {
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 12)
+			}
+		}
+
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
 			if s.Me.NbUnits >= s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 11)
+				cmds.appendTrain(3, nbrPos, 13)
 			}
 		}
 
@@ -886,18 +905,18 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			// consider level 1
 			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-				cmds.appendTrain(1, nbrPos, 12)
+				cmds.appendTrain(1, nbrPos, 15)
 			}
 			// consider level 2
 			if s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
-				cmds.appendTrain(2, nbrPos, 12)
+				cmds.appendTrain(2, nbrPos, 15)
 			}
 			// consider level 3
 			if s.Me.NbUnits >= s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
-				cmds.appendTrain(3, nbrPos, 12)
+				cmds.appendTrain(3, nbrPos, 15)
 			}
 		}
 
@@ -931,10 +950,14 @@ func trainUnits(s *State) {
 
 	// sort and execute
 	candidateCmds.sort()
-	for _, cmd := range candidateCmds.Candidates {
+	fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
+	for i, cmd := range candidateCmds.Candidates {
 		cost := costTrain(cmd.Level)
 		if cost < s.Me.Gold {
 			s.addTrain(cmd.To, cmd.Level)
+			fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		} else {
+			fmt.Fprintf(os.Stderr, "Skipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		}
 	}
 }
