@@ -196,7 +196,10 @@ func (this *Position) isOrHasNeighbourAtDist2(grid [][]rune, cell rune) bool {
 	}
 	for _, dir1 := range DirDRUL {
 		nbrPos := this.neighbour(dir1)
-		if nbrPos != nil && nbrPos.getCell(grid) == cell {
+		if nbrPos == nil {
+			continue
+		}
+		if nbrPos.getCell(grid) == cell {
 			return true
 		}
 		// neighbour dist 2
@@ -1123,12 +1126,17 @@ func trainUnits(s *State) {
 	fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
 	for i, cmd := range candidateCmds.Candidates {
 		cost := costTrain(cmd.Level)
-		fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
+		//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
 		if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
 			s.addTrain(cmd.To, cmd.Level)
 			fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		} else {
-			fmt.Fprintf(os.Stderr, "Skipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			if i < 10 {
+				fmt.Fprintf(os.Stderr, "Skipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			} else {
+				fmt.Fprintf(os.Stderr, "Skipping %d more...\n", len(candidateCmds.Candidates)-10)
+				break
+			}
 		}
 	}
 }
