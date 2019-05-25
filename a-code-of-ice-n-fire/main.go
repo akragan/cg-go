@@ -143,6 +143,16 @@ func (this *Position) setDistance(other *Position) int {
 	return this.Dist
 }
 
+func (this *Position) set(x int, y int) *Position {
+	this.X = x
+	this.Y = y
+	return this
+}
+
+func (this *Position) sameAs(other *Position) bool {
+	return this.X == other.X && this.Y == other.Y
+}
+
 // unsafe
 func (this *Position) getCell(grid [][]rune) rune {
 	return grid[this.Y][this.X]
@@ -160,6 +170,46 @@ func (this *Position) setIntCell(intGrid [][]int, cell int) {
 	intGrid[this.Y][this.X] = cell
 }
 
+func (this *Position) onEdge(grid [][]rune) bool {
+	for _, dir := range DirDRUL {
+		nbrPos := this.neighbour(dir)
+		if nbrPos == nil || nbrPos.getCell(grid) == CellVoid {
+			return true
+		}
+	}
+	return false
+}
+
+func (this *Position) findNeighbour(grid [][]rune, cell rune) int {
+	for _, dir := range DirDRUL {
+		nbrPos := this.neighbour(dir)
+		if nbrPos != nil && nbrPos.getCell(grid) == cell {
+			return dir
+		}
+	}
+	return -1
+}
+
+func (this *Position) isOrHasNeighbourAtDist2(grid [][]rune, cell rune) bool {
+	if this.getCell(grid) == cell {
+		return true
+	}
+	for _, dir1 := range DirDRUL {
+		nbrPos := this.neighbour(dir1)
+		if nbrPos != nil && nbrPos.getCell(grid) == cell {
+			return true
+		}
+		// neighbour dist 2
+		for _, dir2 := range DirDRUL {
+			nbrPos2 := nbrPos.neighbour(dir2)
+			if nbrPos2 != nil && nbrPos2.getCell(grid) == cell {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (this *Position) findNeighbourDir(distGrid [][]int, dist int) int {
 	for _, dir := range DirDRUL {
 		nbrPos := this.neighbour(dir)
@@ -170,33 +220,48 @@ func (this *Position) findNeighbourDir(distGrid [][]int, dist int) int {
 	return -1
 }
 
-func (this *Position) set(x int, y int) *Position {
-	this.X = x
-	this.Y = y
-	return this
-}
-
 func (this *Position) neighbour(direction int) *Position {
-	var n *Position
 	switch direction {
 	case DirLeft:
 		if this.X > 0 {
-			n = &Position{X: this.X - 1, Y: this.Y}
+			return &Position{X: this.X - 1, Y: this.Y}
 		}
 	case DirRight:
 		if this.X < GridDim-1 {
-			n = &Position{X: this.X + 1, Y: this.Y}
+			return &Position{X: this.X + 1, Y: this.Y}
 		}
 	case DirUp:
 		if this.Y > 0 {
-			n = &Position{X: this.X, Y: this.Y - 1}
+			return &Position{X: this.X, Y: this.Y - 1}
 		}
 	case DirDown:
 		if this.Y < GridDim-1 {
-			n = &Position{X: this.X, Y: this.Y + 1}
+			return &Position{X: this.X, Y: this.Y + 1}
 		}
 	}
-	return n
+	return nil
+}
+
+func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
+	switch {
+	case dir1 == DirLeft && dir2 == DirUp || dir2 == DirLeft && dir1 == DirUp:
+		if this.X > 0 && this.Y > 0 {
+			return &Position{X: this.X - 1, Y: this.Y - 1}
+		}
+	case dir1 == DirRight && dir2 == DirUp || dir2 == DirRight && dir1 == DirUp:
+		if this.X < GridDim-1 && this.Y > 0 {
+			return &Position{X: this.X + 1, Y: this.Y - 1}
+		}
+	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir2 == DirDown:
+		if this.X > 0 && this.Y < GridDim-1 {
+			return &Position{X: this.X - 1, Y: this.Y + 1}
+		}
+	case dir1 == DirRight && dir2 == DirDown || dir2 == DirRight && dir1 == DirDown:
+		if this.X < GridDim-1 && this.Y < GridDim-1 {
+			return &Position{X: this.X + 1, Y: this.Y + 1}
+		}
+	}
+	return nil
 }
 
 type Player struct {
@@ -1111,6 +1176,18 @@ func buildMinesAndTowers(s *State) {
 	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
 		pos := getHqTowerPosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+			s.addBuildTower(pos)
+		}
+	}
+	// build towers on Op ChainTrainWin path
+	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
+		s.Me.NbTowers < 5 && s.Me.Gold > CostTower {
+		pos := s.Op.MinDistGoal
+		for (pos.getCell(s.Grid) != CellMeA || pos.getCell(s.UnitGrid) != CellNeutral) && !pos.sameAs(g.Me.Hq) {
+			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
+		}
+		if !pos.sameAs(g.Me.Hq) && !pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
+			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
 			s.addBuildTower(pos)
 		}
 	}
