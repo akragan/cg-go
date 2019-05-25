@@ -413,7 +413,7 @@ func (s *State) init(turn int) {
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
 	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", turn, s.NeutralPct)
 	fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
-	fmt.Fprintf(os.Stderr, "%d: TrainChainWin:%v Gold:%d TrainChainCost=%d\n", turn, s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
+	fmt.Fprintf(os.Stderr, "%d: ChainTrainWin:%v Gold:%d TrainChainCost=%d\n", turn, s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
 
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
@@ -946,6 +946,44 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 	} //for dir
 }
 
+func chainTrainWin(s *State) {
+	if s.Me.Gold < s.Me.MinDistGoal.Dist*CostTrain1 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Attempting ChainTrainWin: Gold=%d TrainChainCost=%d\n", s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
+	pos := s.Me.MinDistGoal
+	posDist := pos.getIntCell(g.DistGrid)
+	actualCost := 0
+	cmds := &CommandSelector{}
+	fmt.Fprintf(os.Stderr, "start loop\n")
+	for posDist != 0 {
+		dir := pos.getIntCell(g.DirGrid)
+		fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
+		pos = pos.neighbour(dir)
+		posDist = pos.getIntCell(g.DistGrid)
+		cell := pos.getCell(s.Grid)
+		unitCell := pos.getCell(s.UnitGrid)
+		level := 1
+		if unitCell == CellOpU {
+			level = 2
+		} else if cell == CellOpT || cell == CellOpP || unitCell == CellOpU2 || unitCell == CellOpU3 {
+			level = 3
+		}
+		actualCost += costTrain(level)
+		cmds.appendTrain(level, pos, posDist)
+	}
+	fmt.Fprintf(os.Stderr, "end loop\n")
+	if s.Me.Gold < actualCost {
+		fmt.Fprintf(os.Stderr, "Abort: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Proceed: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
+	for i, cmd := range cmds.Candidates {
+		s.addTrain(cmd.To, cmd.Level)
+		fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+	}
+}
+
 func trainUnits(s *State) {
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
@@ -1041,6 +1079,7 @@ func main() {
 		s.init(i)
 
 		// generate candidate commands (start with WAIT that never hurts)
+		chainTrainWin(s)
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
