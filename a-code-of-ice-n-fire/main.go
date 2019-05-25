@@ -392,6 +392,7 @@ func (s *State) init(turn int) {
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
 	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", turn, s.NeutralPct)
 	fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
+	fmt.Fprintf(os.Stderr, "%d: TrainChainWin:%v Gold:%d TrainChainCost=%d\n", turn, s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
 
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
@@ -562,10 +563,11 @@ type CommandSelector struct {
 }
 
 type CandidateCommand struct {
-	Unit  *Unit
-	From  *Position
-	To    *Position
-	Value int
+	Unit  *Unit     // Move
+	From  *Position // Move
+	To    *Position // Move, Train
+	Level int       // Train
+	Value int       // Move, Train
 }
 
 func (this *CommandSelector) appendMove(u *Unit, from *Position, to *Position, value int) {
@@ -577,11 +579,26 @@ func (this *CommandSelector) appendMove(u *Unit, from *Position, to *Position, v
 	})
 }
 
-func (this *CommandSelector) bestCommand() *CandidateCommand {
+func (this *CommandSelector) appendTrain(level int, at *Position, value int) {
+	this.Candidates = append(this.Candidates, &CandidateCommand{
+		To:    at,
+		Level: level,
+		Value: value,
+	})
+}
+
+func (this *CommandSelector) sort() {
+	if len(this.Candidates) < 2 {
+		return
+	}
+	sort.Slice(this.Candidates, func(i, j int) bool { return this.Candidates[i].Value > this.Candidates[j].Value })
+}
+
+func (this *CommandSelector) best() *CandidateCommand {
 	if len(this.Candidates) == 0 {
 		return nil
 	}
-	sort.Slice(this.Candidates, func(i, j int) bool { return this.Candidates[i].Value > this.Candidates[j].Value })
+	this.sort()
 	return this.Candidates[0]
 }
 
@@ -601,6 +618,10 @@ func myActiveCell(cell rune) bool {
 	return cell == CellMeA || cell == CellMeH || cell == CellMeM || cell == CellMeT || cell == CellMeP
 }
 
+func opActiveCell(cell rune) bool {
+	return cell == CellOpA || cell == CellOpH || cell == CellOpM || cell == CellOpT || cell == CellOpP
+}
+
 func compactFactor(pos *Position, grid [][]rune) int {
 	count := 0
 	for _, dir := range DirDRUL {
@@ -613,6 +634,22 @@ func compactFactor(pos *Position, grid [][]rune) int {
 		}
 	}
 	return count
+}
+
+func isWedge(pos *Position, grid [][]rune) bool {
+	lPos := pos.neighbour(DirLeft)
+	lOpA := lPos != nil && opActiveCell(lPos.getCell(grid))
+
+	rPos := pos.neighbour(DirRight)
+	rOpA := rPos != nil && opActiveCell(rPos.getCell(grid))
+
+	uPos := pos.neighbour(DirUp)
+	uOpA := uPos != nil && opActiveCell(uPos.getCell(grid))
+
+	dPos := pos.neighbour(DirDown)
+	dOpA := dPos != nil && opActiveCell(dPos.getCell(grid))
+
+	return lOpA && rOpA && !uOpA && !dOpA || !lOpA && !rOpA && uOpA && dOpA
 }
 
 func moveUnits(s *State) {
@@ -628,7 +665,7 @@ func moveUnits(s *State) {
 		}
 		pos.set(u.X, u.Y)
 		//fmt.Fprintf(os.Stderr, "Unit: %d Pos: %d %d HQ: %d %d \n", u.Id, pos.X, pos.Y, g.HqMe.X, g.HqMe.Y)
-		candidateCmds := CommandSelector{}
+		candidateCmds := &CommandSelector{}
 		for _, dir := range dirs {
 
 			nbrPos := pos.neighbour(dir)
@@ -689,14 +726,16 @@ func moveUnits(s *State) {
 				candidateCmds.appendMove(u, pos, nbrPos, 12)
 				continue
 			}
-			// TODO more priority for cells splitting Op territory
 			// Op active land capturing moves (by any unit)
-			// + more priority for cells keeping my territory compact
+			// ++ priority for cells splitting Op territory
+			// + priority for cells keeping my territory compact
 			if nbrCell == CellOpA && !anyUnitCell(unitCell) {
-				if compactFactor(nbrPos, s.Grid) > 1 {
+				if isWedge(nbrPos, s.Grid) {
 					candidateCmds.appendMove(u, pos, nbrPos, 11)
-				} else {
+				} else if compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 10)
+				} else {
+					candidateCmds.appendMove(u, pos, nbrPos, 9)
 				}
 				continue
 			}
@@ -738,51 +777,48 @@ func moveUnits(s *State) {
 			}
 		} //for dir
 		// pick the best move for unit
-		if bestCmd := candidateCmds.bestCommand(); bestCmd != nil {
+		if bestCmd := candidateCmds.best(); bestCmd != nil {
 			fmt.Fprintf(os.Stderr, "Unit:%d, Candidates:%d, Best:%d X:%d Y:%d\n", bestCmd.Unit.Id, len(candidateCmds.Candidates), bestCmd.Value, bestCmd.To.X, bestCmd.To.Y)
 			s.addMove(bestCmd.Unit, bestCmd.From, bestCmd.To)
 		}
 	}
 }
 
-func trainUnitInNeighbourhood(s *State, pos *Position, dirs []int, cellType rune) bool {
-	trained := false
+func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, dirs []int, cellType rune, highVal int) {
 	for _, dir := range dirs {
 		nbrPos := pos.neighbour(dir)
 		if nbrPos != nil {
 			nbrCell := nbrPos.getCell(s.Grid)
 			unitCell := nbrPos.getCell(s.UnitGrid)
 			if nbrCell == cellType && unitCell == CellNeutral {
-				if (s.Me.NbUnits < Min1 || s.Me.NbUnits1 < s.Op.NbUnits1 || s.NeutralPct > 0.2) &&
+				if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 					s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-					s.addTrain(nbrPos, 1)
+					cmds.appendTrain(1, nbrPos, highVal)
 				} else if s.Me.NbUnits >= s.Op.NbUnits &&
 					s.Me.income() > 2*CostKeep3 &&
 					s.Me.Gold > CostTrain3 {
-					s.addTrain(nbrPos, 3)
+					cmds.appendTrain(3, nbrPos, highVal)
 				} else if s.Me.income() > 2*CostKeep2 &&
 					s.Me.Gold > CostTrain2 {
-					s.addTrain(nbrPos, 2)
+					cmds.appendTrain(2, nbrPos, highVal)
 				} else {
 					// found a cell but couldn't train
-					return false
+					return
 				}
-				//TRAIN only one
-				trained = true
 			}
 		}
 	} //for dir
-	return trained
 }
 
 func trainUnits(s *State) {
 	pos := &Position{}
+	candidateCmds := &CommandSelector{}
+
 	dirs := DirLURD
 	if g.HqMe.X != 0 {
 		dirs = DirDRUL
 	}
 
-	trained := false
 	// train in new areas
 	for j := 0; j < GridDim; j++ {
 		for i := 0; i < GridDim; i++ {
@@ -795,11 +831,11 @@ func trainUnits(s *State) {
 			if cell != CellMeA && cell != CellMeH && cell != CellMeM {
 				continue
 			}
-			trained = trainUnitInNeighbourhood(s, pos, dirs, CellNeutral)
+			trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellNeutral, 12)
 		} // for i
 	} // for j
 
-	if !trained {
+	if len(candidateCmds.Candidates) == 0 {
 		// train in areas neighbouring inactive Op cells
 		for j := 0; j < GridDim; j++ {
 			for i := 0; i < GridDim; i++ {
@@ -812,12 +848,12 @@ func trainUnits(s *State) {
 				if cell != CellOpNA && cell != CellOpNM && cell != CellOpNT {
 					continue
 				}
-				trained = trainUnitInNeighbourhood(s, pos, dirs, CellMeA)
+				trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 9)
 			} // for i
 		} // for j
 	}
 
-	if !trained {
+	if len(candidateCmds.Candidates) == 0 {
 		// train in areas neighbouring active Op cells
 		for j := 0; j < GridDim; j++ {
 			for i := 0; i < GridDim; i++ {
@@ -830,17 +866,34 @@ func trainUnits(s *State) {
 				if cell != CellOpA && cell != CellOpM && cell != CellOpT && cell != CellOpP {
 					continue
 				}
-				//TODO train more than one per round
-				trained = trainUnitInNeighbourhood(s, pos, dirs, CellMeA)
+				trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 6)
 			} // for i
 		} // for j
 	}
 
-	if !trained {
+	if len(candidateCmds.Candidates) == 0 {
 		// worst case train at headquarters
 		pos.set(g.HqMe.X, g.HqMe.Y)
-		trainUnitInNeighbourhood(s, pos, dirs, CellMeA)
+		trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 3)
 	}
+	// sort and execute
+	candidateCmds.sort()
+	for _, cmd := range candidateCmds.Candidates {
+		cost := costTrain(cmd.Level)
+		if cost < s.Me.Gold {
+			s.addTrain(cmd.To, cmd.Level)
+		}
+	}
+}
+
+func costTrain(level int) int {
+	switch level {
+	case 2:
+		return CostTrain2
+	case 3:
+		return CostTrain3
+	}
+	return CostTrain1
 }
 
 func buildMinesAndTowers(s *State) {
