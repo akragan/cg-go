@@ -1223,6 +1223,7 @@ func buildMinesAndTowers(s *State) {
 	}
 	// build more mines
 	if s.Me.NbMines > 0 &&
+		s.Op.income() < s.Me.income() && // add 2nd mine when I'm already rich...
 		s.NeutralPct < 0.2 &&
 		s.Me.NbMines < MaxMines &&
 		s.Me.Gold > s.Me.mineCost() {
