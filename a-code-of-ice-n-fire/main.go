@@ -1034,8 +1034,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
-				s.Me.income() > 2*CostKeep3 &&
+			if s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
 			}
