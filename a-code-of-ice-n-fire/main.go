@@ -944,7 +944,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 		}
 		// consider level 3
 		if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-			s.Me.income() > 2*CostKeep3 &&
+			s.Me.income() > CostKeep3+CostKeep2 &&
 			s.Me.Gold > CostTrain3 {
 			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.Me.DistGrid))
 		}
@@ -982,7 +982,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-				s.Me.income() > 2*CostKeep3 &&
+				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 5+bonus)
 			}
@@ -1002,7 +1002,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-				s.Me.income() > 2*CostKeep3 &&
+				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 7+bonus)
 			}
@@ -1017,7 +1017,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			}
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-				s.Me.income() > 2*CostKeep3 &&
+				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10+bonus)
 			}
@@ -1026,7 +1026,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 		if nbrUnitCell == CellOpU2 {
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-				s.Me.income() > 2*CostKeep3 &&
+				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12+bonus)
 			}
@@ -1035,7 +1035,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
-				s.Me.income() > 2*CostKeep3 &&
+				s.Me.income() > CostKeep3+CostKeep2 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
 			}
