@@ -78,6 +78,9 @@ const (
 	MaxTowers = 5
 	MaxMines  = 2
 
+	TrainWedgeBonus   = 3
+	TrainOpAlertBonus = 1
+
 	InfDist = 100
 )
 
@@ -1008,10 +1011,10 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 		nbrUnitCell := nbrPos.getCell(s.UnitGrid)
 		bonus := 0
 		if isWedge(nbrPos, s.Grid) {
-			bonus += 10
+			bonus += TrainWedgeBonus
 		}
 		if nbrPos.setDistance(s.Op.MinDistGoal) < 3 {
-			bonus += 5
+			bonus += TrainOpAlertBonus
 		}
 
 		if (nbrCell == CellNeutral || nbrCell == CellOpNA || nbrCell == CellOpNM || nbrCell == CellOpNT) &&
