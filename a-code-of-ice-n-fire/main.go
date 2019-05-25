@@ -73,8 +73,10 @@ const (
 	DirRight = 2
 	DirDown  = 3
 
-	Min1 = 3
-	Min2 = 2
+	Min1      = 3
+	Min2      = 2
+	MaxTowers = 5
+	MaxMines  = 2
 
 	InfDist = 100
 )
@@ -278,9 +280,8 @@ type Player struct {
 	NbUnits2 int
 	NbUnits3 int
 
-	NbMines   int
-	NbTowers  int
-	MineSpots []*Position
+	NbMines  int
+	NbTowers int
 
 	ActiveArea int
 	Upkeep     int
@@ -584,6 +585,12 @@ func (s *State) init() {
 	if g.Turn == 0 {
 		g.Me.initDistGrid(s.Grid)
 		g.Op.initDistGrid(s.Grid)
+
+		// sort mine spots by walking distance from My HQ (using Op.DistGrid)
+		for i := 0; i < g.NbMines; i++ {
+			g.Mines[i].Dist = g.Mines[i].getIntCell(g.Op.DistGrid)
+		}
+		sort.Slice(g.Mines, func(i, j int) bool { return g.Mines[i].Dist < g.Mines[j].Dist })
 	}
 
 	fmt.Scan(&s.NbUnits)
@@ -1181,7 +1188,8 @@ func getHqMinePosition() *Position {
 
 func buildMinesAndTowers(s *State) {
 	// build tower near HQ
-	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
+	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) &&
+		s.Me.Gold > CostTower {
 		pos := getHqTowerPosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			s.addBuildTower(pos)
@@ -1189,24 +1197,45 @@ func buildMinesAndTowers(s *State) {
 	}
 	// build towers on Op ChainTrainWin path
 	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
-		s.Me.NbTowers < 5 && s.Me.Gold > CostTower {
+		s.Me.NbTowers < MaxTowers &&
+		s.Me.Gold > CostTower {
 		pos := s.Op.MinDistGoal
-		for (pos.getCell(s.Grid) != CellMeA ||
-			pos.getCell(s.UnitGrid) != CellNeutral ||
-			pos.getCell(g.MineGrid) == CellMine) &&
+		for (pos.getCell(s.Grid) != CellMeA || pos.getCell(s.UnitGrid) != CellNeutral || pos.getCell(g.MineGrid) == CellMine) &&
 			!pos.sameAs(g.Me.Hq) {
 			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 		}
-		if !pos.sameAs(g.Me.Hq) && !pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
+		if !pos.sameAs(g.Me.Hq) &&
+			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
 			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
 			s.addBuildTower(pos)
 		}
 	}
 	// build mine near HQ
-	if s.Me.NbUnits >= Min1 && s.Op.income() > s.Me.income() && s.Me.NbMines == 0 && s.Me.Gold > s.Me.mineCost() {
+	if s.Me.NbUnits >= Min1 &&
+		s.Op.income() > s.Me.income() &&
+		s.Me.NbMines == 0 &&
+		s.Me.Gold > s.Me.mineCost() {
 		pos := getHqMinePosition()
-		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+		if pos.getCell(s.Grid) == CellMeA &&
+			pos.getCell(s.UnitGrid) == CellNeutral {
 			s.addBuildMine(pos)
+		}
+	}
+	// build more mines
+	if s.Me.NbMines > 0 &&
+		s.NeutralPct < 0.2 &&
+		s.Me.NbMines < MaxMines &&
+		s.Me.Gold > s.Me.mineCost() {
+		for i := 0; i < len(g.Mines); i++ {
+			mineSpot := g.Mines[i]
+			if mineSpot.getCell(s.Grid) == CellMeM {
+				continue
+			}
+			if mineSpot.getCell(s.Grid) == CellMeA &&
+				mineSpot.getCell(s.UnitGrid) == CellNeutral {
+				s.addBuildMine(mineSpot)
+			}
+			break
 		}
 	}
 }
