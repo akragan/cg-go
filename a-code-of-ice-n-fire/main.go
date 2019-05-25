@@ -943,7 +943,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.Me.DistGrid))
 		}
 		// consider level 3
-		if s.Me.NbUnits >= s.Op.NbUnits &&
+		if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 			s.Me.income() > 2*CostKeep3 &&
 			s.Me.Gold > CostTrain3 {
 			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.Me.DistGrid))
@@ -975,13 +975,13 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 6+bonus)
 			}
 			// consider level 2
-			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+			if s.Me.NbUnits < 3*s.Op.NbUnits &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 4+bonus)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 5+bonus)
@@ -995,13 +995,13 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 9+bonus)
 			}
 			// consider level 2
-			if (s.Me.NbUnits < 5*s.Op.NbUnits) &&
+			if (s.Me.NbUnits < 3*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 8+bonus)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 7+bonus)
@@ -1010,13 +1010,13 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrUnitCell == CellOpU {
 			// consider level 2 and 3
-			if (s.Me.NbUnits < 5*s.Op.NbUnits) &&
+			if (s.Me.NbUnits < 3*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 11+bonus)
 			}
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10+bonus)
@@ -1025,7 +1025,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrUnitCell == CellOpU2 {
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12+bonus)
@@ -1034,28 +1034,31 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
-			if s.Me.income() > 2*CostKeep3 &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.NeutralPct < 0.2) &&
+				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
 			}
 		}
 
+		if nbrCell == CellOpT && nbrPos.sameAs(g.Op.Hq) {
+			// consider level 3
+			if s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 100)
+			}
+		}
+
 		if nbrCell == CellOpH {
 			// consider level 1
-			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
-				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
+			if s.Me.Gold > CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 100)
 			}
 			// consider level 2
-			if s.Me.NbUnits < 5*s.Op.NbUnits &&
-				s.Me.income() > 2*CostKeep2 &&
-				s.Me.Gold > CostTrain2 {
+			if s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 100)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
-				s.Me.income() > 2*CostKeep3 &&
-				s.Me.Gold > CostTrain3 {
+			if s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 100)
 			}
 		}
