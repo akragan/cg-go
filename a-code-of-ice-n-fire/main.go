@@ -160,10 +160,10 @@ func (this *Position) setIntCell(intGrid [][]int, cell int) {
 	intGrid[this.Y][this.X] = cell
 }
 
-func (this *Position) findNeighbourDir(intGrid [][]int, dist int) int {
+func (this *Position) findNeighbourDir(distGrid [][]int, dist int) int {
 	for _, dir := range DirDRUL {
 		nbrPos := this.neighbour(dir)
-		if nbrPos != nil && nbrPos.getIntCell(g.DistGrid) == dist {
+		if nbrPos != nil && nbrPos.getIntCell(distGrid) == dist {
 			return dir
 		}
 	}
@@ -201,6 +201,7 @@ func (this *Position) neighbour(direction int) *Position {
 
 type Player struct {
 	Id     int
+	Game   *GamePlayer
 	Gold   int
 	Income int
 
@@ -216,8 +217,10 @@ type Player struct {
 	ActiveArea int
 	Upkeep     int
 
-	MinUnitDistGoal int
-	MinDistGoal     *Position
+	MinUnitDistGoal   int
+	MinDistGoal       *Position
+	ChainTrainWin     bool
+	ChainTrainWinNext bool
 }
 
 func (this *Player) addUnit(u *Unit) {
@@ -232,6 +235,16 @@ func (this *Player) addUnit(u *Unit) {
 	case 3:
 		this.NbUnits3++
 		this.Upkeep += CostKeep3
+	}
+}
+
+func (this *Player) addActiveArea(pos *Position) {
+	this.ActiveArea++
+	if g.Turn > 0 {
+		dist := pos.getIntCell(this.Game.DistGrid)
+		if dist < this.MinDistGoal.Dist {
+			this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
+		}
 	}
 }
 
@@ -277,17 +290,26 @@ func (this *Command) Pos() *Position {
 	return &Position{X: this.X, Y: this.Y}
 }
 
+type GamePlayer struct {
+	Name     string
+	Hq       *Position
+	Other    *GamePlayer
+	DistGrid [][]int
+	DirGrid  [][]int
+}
+
 type Game struct {
+	Turn     int
+	TurnTime time.Time
+	RespTime time.Time
+
+	Me *GamePlayer
+	Op *GamePlayer
+
 	NbMines     int
 	Mines       []*Position
 	MineGrid    [][]rune
-	HqMe        *Position
-	HqOp        *Position
 	InitNeutral int
-	DistGrid    [][]int
-	DirGrid     [][]int
-	TurnTime    time.Time
-	RespTime    time.Time
 }
 
 func initGame() {
@@ -295,12 +317,24 @@ func initGame() {
 	g.InitNeutral = 0
 	g.Mines = make([]*Position, g.NbMines)
 	g.MineGrid = make([][]rune, GridDim)
-	g.DistGrid = make([][]int, GridDim)
-	g.DirGrid = make([][]int, GridDim)
+
+	g.Me = &GamePlayer{Name: "Me"}
+	g.Me.DistGrid = make([][]int, GridDim)
+	g.Me.DirGrid = make([][]int, GridDim)
+
+	g.Op = &GamePlayer{Name: "Op"}
+	g.Op.DistGrid = make([][]int, GridDim)
+	g.Op.DirGrid = make([][]int, GridDim)
+
+	g.Me.Other = g.Op
+	g.Op.Other = g.Me
+
 	for i := 0; i < GridDim; i++ {
 		g.MineGrid[i] = []rune(RowNeutral)
-		g.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-		g.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Me.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Me.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Op.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Op.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
 	}
 	for i := 0; i < g.NbMines; i++ {
 		mine := &Position{}
@@ -310,25 +344,25 @@ func initGame() {
 	}
 }
 
-func initDistGrid(grid [][]rune) {
-	pos := &Position{X: g.HqOp.X, Y: g.HqOp.Y, Dist: 0}
+func (this *GamePlayer) initDistGrid(grid [][]rune) {
+	pos := &Position{X: this.Other.Hq.X, Y: this.Other.Hq.Y, Dist: 0}
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
-		if pos.getIntCell(g.DistGrid) != -1 {
+		if pos.getIntCell(this.DistGrid) != -1 {
 			continue
 		}
 		//fmt.Fprintf(os.Stderr, "init DistGrid: (%d,%d):%d, queue size=%d\n", pos.X, pos.Y, pos.Dist, len(todo))
 		if pos.getCell(grid) == CellVoid {
-			pos.setIntCell(g.DistGrid, InfDist)
+			pos.setIntCell(this.DistGrid, InfDist)
 		} else {
-			pos.setIntCell(g.DistGrid, pos.Dist)
+			pos.setIntCell(this.DistGrid, pos.Dist)
 			if pos.Dist != 0 {
-				pos.setIntCell(g.DirGrid, pos.findNeighbourDir(g.DistGrid, pos.Dist-1))
+				pos.setIntCell(this.DirGrid, pos.findNeighbourDir(this.DistGrid, pos.Dist-1))
 			}
 			for _, dir := range DirDRUL {
 				nbrPos := pos.neighbour(dir)
-				if nbrPos != nil && nbrPos.getIntCell(g.DistGrid) == -1 {
+				if nbrPos != nil && nbrPos.getIntCell(this.DistGrid) == -1 {
 					nbrPos.Dist = pos.Dist + 1
 					todo = todo.Put(nbrPos)
 					//fmt.Fprintf(os.Stderr, "\tdir=%v add (%d,%d):%d, queue size=%d\n", dir, nbrPos.X, nbrPos.Y, nbrPos.Dist, len(todo))
@@ -337,8 +371,8 @@ func initDistGrid(grid [][]rune) {
 		} // if/else cell void
 		//printDistGrid()
 	} // for queue non-empty
-	printIntGrid("DistGrid", g.DistGrid)
-	printIntGrid("DirGrid", g.DirGrid)
+	printIntGrid(this.Name+" DistGrid", this.DistGrid)
+	printIntGrid(this.Name+" DirGrid", this.DirGrid)
 }
 
 func printIntGrid(label string, grid [][]int) {
@@ -367,17 +401,18 @@ type State struct {
 	Commands []*Command
 }
 
-func (s *State) init(turn int) {
+func (s *State) init() {
 	pos := &Position{}
 
-	s.Me = &Player{}
+	s.Me = &Player{Game: g.Me}
 	s.Me.MinUnitDistGoal = InfDist
 	s.Me.MinDistGoal = &Position{X: -1, Y: -1, Dist: InfDist}
 	fmt.Scan(&s.Me.Gold)
 	fmt.Scan(&s.Me.Income)
 
-	s.Op = &Player{}
+	s.Op = &Player{Game: g.Op}
 	s.Op.MinUnitDistGoal = InfDist
+	s.Op.MinDistGoal = &Position{X: -1, Y: -1, Dist: InfDist}
 	fmt.Scan(&s.Op.Gold)
 	fmt.Scan(&s.Op.Income)
 
@@ -392,17 +427,11 @@ func (s *State) init(turn int) {
 		for j := 0; j < GridDim; j++ {
 			pos.set(j, i)
 			if line[j] == CellMeA {
-				s.Me.ActiveArea++
-				if turn > 0 {
-					dist := pos.getIntCell(g.DistGrid)
-					if dist < s.Me.MinDistGoal.Dist {
-						s.Me.MinDistGoal.set(j, i).Dist = dist
-					}
-				}
+				s.Me.addActiveArea(pos)
 			} else if line[j] == CellOpA {
-				s.Op.ActiveArea++
+				s.Op.addActiveArea(pos)
 			} else if line[j] == CellNeutral {
-				if turn == 0 {
+				if g.Turn == 0 {
 					g.InitNeutral += 1
 				}
 				s.Neutral += 1
@@ -411,9 +440,16 @@ func (s *State) init(turn int) {
 		s.UnitGrid[i] = []rune(RowNeutral)
 	}
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
-	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", turn, s.NeutralPct)
-	fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
-	fmt.Fprintf(os.Stderr, "%d: ChainTrainWin:%v Gold:%d TrainChainCost=%d\n", turn, s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
+	s.Me.ChainTrainWin = s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1
+	s.Me.ChainTrainWinNext = s.Me.Gold+s.Me.income() >= (s.Me.MinDistGoal.Dist-1)*CostTrain1
+	s.Op.ChainTrainWin = s.Op.Gold >= s.Op.MinDistGoal.Dist*CostTrain1
+	s.Op.ChainTrainWinNext = s.Op.Gold+s.Op.income() >= (s.Op.MinDistGoal.Dist-1)*CostTrain1
+
+	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
+	fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
+	fmt.Fprintf(os.Stderr, "%d: Me.ChainTrainWin:%v Next:%v Gold:%d TrainChainCost=%d\n", g.Turn, s.Me.ChainTrainWin, s.Me.ChainTrainWinNext, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
+	fmt.Fprintf(os.Stderr, "%d: Op.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y, s.Op.MinDistGoal.Dist)
+	fmt.Fprintf(os.Stderr, "%d: Op.ChainTrainWin:%v Next:%v Gold:%d TrainChainCost=%d\n", g.Turn, s.Op.ChainTrainWin, s.Op.ChainTrainWinNext, s.Op.Gold, s.Op.MinDistGoal.Dist*CostTrain1)
 
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
@@ -425,10 +461,10 @@ func (s *State) init(turn int) {
 		switch b.Type {
 		case TypeHq:
 			if b.Owner == IdMe {
-				g.HqMe = bPos
+				g.Me.Hq = bPos
 				bPos.setCell(s.Grid, CellMeH)
 			} else {
-				g.HqOp = bPos
+				g.Op.Hq = bPos
 				bPos.setCell(s.Grid, CellOpH)
 			}
 		case TypeMine:
@@ -477,8 +513,9 @@ func (s *State) init(turn int) {
 		}
 	}
 
-	if turn == 0 {
-		initDistGrid(s.Grid)
+	if g.Turn == 0 {
+		g.Me.initDistGrid(s.Grid)
+		g.Op.initDistGrid(s.Grid)
 	}
 
 	fmt.Scan(&s.NbUnits)
@@ -490,7 +527,7 @@ func (s *State) init(turn int) {
 		pos.set(u.X, u.Y)
 
 		if u.Owner == IdMe {
-			pos.setDistance(g.HqOp)
+			pos.setDistance(g.Op.Hq)
 			if s.Me.MinUnitDistGoal > pos.Dist {
 				s.Me.MinUnitDistGoal = pos.Dist
 			}
@@ -504,7 +541,7 @@ func (s *State) init(turn int) {
 			}
 			s.Me.addUnit(u)
 		} else {
-			pos.setDistance(g.HqMe)
+			pos.setDistance(g.Me.Hq)
 			if s.Op.MinUnitDistGoal > pos.Dist {
 				s.Op.MinUnitDistGoal = pos.Dist
 			}
@@ -679,7 +716,7 @@ func isWedge(pos *Position, grid [][]rune) bool {
 func moveUnits(s *State) {
 	pos := &Position{}
 	dirs := DirDRUL
-	if g.HqMe.X != 0 {
+	if g.Me.Hq.X != 0 {
 		dirs = DirLURD
 	}
 	for i := 0; i < s.NbUnits; i++ {
@@ -794,8 +831,8 @@ func moveUnits(s *State) {
 			// value depends on whether we're getting closer or further from Op Hq
 			// 1 if closer, 0 if same, -1 if further
 			if nbrCell == CellMeA && !myUnitCell(unitCell) {
-				currDist := pos.getIntCell(g.DistGrid)
-				nbrDist := nbrPos.getIntCell(g.DistGrid)
+				currDist := pos.getIntCell(g.Me.DistGrid)
+				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
 				candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
 				continue
 			}
@@ -820,19 +857,19 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 		// consider level 1
 		if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 			s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.DistGrid))
+			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.Me.DistGrid))
 		}
 		// consider level 2
 		if s.Me.NbUnits < 5*s.Op.NbUnits &&
 			s.Me.income() > 2*CostKeep2 &&
 			s.Me.Gold > CostTrain2 {
-			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.DistGrid))
+			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.Me.DistGrid))
 		}
 		// consider level 3
 		if s.Me.NbUnits >= s.Op.NbUnits &&
 			s.Me.income() > 2*CostKeep3 &&
 			s.Me.Gold > CostTrain3 {
-			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.DistGrid))
+			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.Me.DistGrid))
 		}
 	}
 
@@ -877,7 +914,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 				cmds.appendTrain(1, nbrPos, 9)
 			}
 			// consider level 2
-			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+			if (s.Me.NbUnits < 5*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 8)
@@ -892,13 +929,13 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrUnitCell == CellOpU {
 			// consider level 2 and 3
-			if s.Me.NbUnits < 5*s.Op.NbUnits &&
+			if (s.Me.NbUnits < 5*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
 				s.Me.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 11)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10)
@@ -907,7 +944,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrUnitCell == CellOpU2 {
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12)
@@ -916,7 +953,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13)
@@ -952,27 +989,28 @@ func chainTrainWin(s *State) {
 	}
 	fmt.Fprintf(os.Stderr, "Attempting ChainTrainWin: Gold=%d TrainChainCost=%d\n", s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
 	pos := s.Me.MinDistGoal
-	posDist := pos.getIntCell(g.DistGrid)
+	posDist := pos.getIntCell(g.Me.DistGrid)
 	actualCost := 0
 	cmds := &CommandSelector{}
-	fmt.Fprintf(os.Stderr, "start loop\n")
+	//fmt.Fprintf(os.Stderr, "start loop\n")
 	for posDist != 0 {
-		dir := pos.getIntCell(g.DirGrid)
+		dir := pos.getIntCell(g.Me.DirGrid)
 		fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
 		pos = pos.neighbour(dir)
-		posDist = pos.getIntCell(g.DistGrid)
+		posDist = pos.getIntCell(g.Me.DistGrid)
 		cell := pos.getCell(s.Grid)
 		unitCell := pos.getCell(s.UnitGrid)
 		level := 1
 		if unitCell == CellOpU {
 			level = 2
-		} else if cell == CellOpT || cell == CellOpP || unitCell == CellOpU2 || unitCell == CellOpU3 {
+		}
+		if cell == CellOpT || cell == CellOpP || unitCell == CellOpU2 || unitCell == CellOpU3 {
 			level = 3
 		}
 		actualCost += costTrain(level)
 		cmds.appendTrain(level, pos, posDist)
 	}
-	fmt.Fprintf(os.Stderr, "end loop\n")
+	//fmt.Fprintf(os.Stderr, "end loop\n")
 	if s.Me.Gold < actualCost {
 		fmt.Fprintf(os.Stderr, "Abort: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
 		return
@@ -989,7 +1027,7 @@ func trainUnits(s *State) {
 	candidateCmds := &CommandSelector{}
 
 	dirs := DirLURD
-	if g.HqMe.X != 0 {
+	if g.Me.Hq.X != 0 {
 		dirs = DirDRUL
 	}
 
@@ -1034,49 +1072,58 @@ func costTrain(level int) int {
 	return CostTrain1
 }
 
-func buildMinesAndTowers(s *State) {
-	if s.Me.NbUnits >= Min1 {
-		// try building 1 mine
-		if s.Op.NbMines > 0 && s.Me.NbMines == 0 && s.Me.Gold > s.Me.mineCost() {
-			if g.HqMe.X == 0 {
-				// build mine at (1,0)
-				pos := &Position{X: 1, Y: 0}
-				if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
-					s.addBuildMine(pos)
-				}
-			} else {
-				// build mine at (10,11)
-				pos := &Position{X: 10, Y: 11}
-				if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
-					s.addBuildMine(pos)
-				}
-			}
+func getHqTowerPosition() *Position {
+	if g.Me.Hq.X == 0 {
+		// build tower at (1,1)
+		pos := &Position{X: 1, Y: 1}
+		if pos.getCell(g.MineGrid) == CellMine {
+			// if (1,1) is a mine, try (0,1) instead
+			pos = &Position{X: 0, Y: 1}
 		}
-		// try building 1 tower
-		if s.Op.MinUnitDistGoal <= 5 && s.Me.NbTowers == 0 && s.Me.Gold > CostTower {
-			if g.HqMe.X == 0 {
-				// build tower at (1,1)
-				pos := &Position{X: 1, Y: 1}
-				if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
-					s.addBuildTower(pos)
-				}
-			} else {
-				// build tower at (10,10)
-				pos := &Position{X: 10, Y: 10}
-				if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
-					s.addBuildTower(pos)
-				}
-			}
+		return pos
+	}
+	// else build tower at (10,10)
+	pos := &Position{X: 10, Y: 10}
+	if pos.getCell(g.MineGrid) == CellMine {
+		// if (10,10) is a mine, try (11,10) instead
+		pos = &Position{X: 11, Y: 10}
+	}
+	return pos
+}
+
+func getHqMinePosition() *Position {
+	if g.Me.Hq.X == 0 {
+		// build mine at (1,0)
+		return &Position{X: 1, Y: 0}
+	}
+	// else build mine at (10,11)
+	return &Position{X: 10, Y: 11}
+}
+
+func buildMinesAndTowers(s *State) {
+	// build tower near HQ
+	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
+		pos := getHqTowerPosition()
+		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+			s.addBuildTower(pos)
+		}
+	}
+	// build mine near HQ
+	if s.Me.NbUnits >= Min1 && s.Op.income() > s.Me.income() && s.Me.NbMines == 0 && s.Me.Gold > s.Me.mineCost() {
+		pos := getHqMinePosition()
+		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+			s.addBuildMine(pos)
 		}
 	}
 }
 
 func main() {
+	g.Turn = 0
 	g.TurnTime = time.Now()
 	initGame()
-	for i := 0; ; i++ {
+	for ; ; g.Turn += 1 {
 		s := &State{}
-		s.init(i)
+		s.init()
 
 		// generate candidate commands (start with WAIT that never hurts)
 		chainTrainWin(s)
@@ -1093,7 +1140,7 @@ func main() {
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
 
-		fmt.Fprintf(os.Stderr, "Turn %d. elapsed: %v, response: %v\n", i, time.Since(g.TurnTime), time.Since(g.RespTime))
+		fmt.Fprintf(os.Stderr, "Turn %d. elapsed: %v, response: %v\n", g.Turn, time.Since(g.TurnTime), time.Since(g.RespTime))
 		g.TurnTime = time.Now()
 	} // for
 }
