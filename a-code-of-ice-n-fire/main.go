@@ -579,6 +579,7 @@ func (s *State) addMove(u *Unit, from *Position, to *Position) {
 	to.setCell(s.Grid, CellMeA)
 	to.setCell(s.UnitGrid, CellMeU)
 	from.setCell(s.UnitGrid, CellNeutral)
+	s.Me.addActiveArea(to)
 }
 
 func (s *State) addTrain(at *Position, level int) {
@@ -593,6 +594,7 @@ func (s *State) addTrain(at *Position, level int) {
 		s.Me.Gold -= CostTrain3
 	}
 	s.Me.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
+	s.Me.addActiveArea(at)
 }
 
 func (s *State) action() string {
@@ -983,7 +985,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 	} //for dir
 }
 
-func chainTrainWin(s *State) {
+func checkChainTrainWin(s *State) {
 	if s.Me.Gold < s.Me.MinDistGoal.Dist*CostTrain1 {
 		return
 	}
@@ -1125,14 +1127,17 @@ func main() {
 		s := &State{}
 		s.init()
 
-		// generate candidate commands (start with WAIT that never hurts)
-		chainTrainWin(s)
+		// chekc chain train win before move
+		checkChainTrainWin(s)
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
 
 		// 1. look at MOVE commands
 		moveUnits(s)
+
+		// check chain train win after move
+		checkChainTrainWin(s)
 
 		// 2. look at TRAIN commands
 		trainUnits(s)
