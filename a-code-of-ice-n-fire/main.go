@@ -3,6 +3,7 @@ package main
 import "fmt"
 import "sort"
 import "os"
+import "time"
 
 //import "bufio"
 //import "strings"
@@ -274,6 +275,8 @@ type Game struct {
 	HqOp        *Position
 	InitNeutral int
 	DistGrid    [][]int
+	TurnTime    time.Time
+	RespTime    time.Time
 }
 
 func initGame() {
@@ -495,7 +498,7 @@ func (s *State) init(turn int) {
 			s.Op.addUnit(u)
 		}
 	}
-
+	g.RespTime = time.Now()
 	s.Commands = []*Command{&Command{Type: CmdWait}}
 }
 
@@ -686,17 +689,17 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op active TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && unitCell == CellOpP && !myUnitCell(unitCell) {
+			if u.Level == 3 && nbrCell == CellOpT && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 19)
 				continue
 			}
 			// Op TOWER-protected land capturing moves (only by l3 unit)
-			if u.Level == 3 && unitCell == CellOpT && !myUnitCell(unitCell) {
+			if u.Level == 3 && nbrCell == CellOpP && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 18)
 				continue
 			}
 			// Op inactive TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && unitCell == CellOpNT && !myUnitCell(unitCell) {
+			if u.Level == 3 && nbrCell == CellOpNT && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 17)
 				continue
 			}
@@ -784,29 +787,120 @@ func moveUnits(s *State) {
 	}
 }
 
-func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, dirs []int, cellType rune, highVal int) {
+func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, dirs []int) {
+
+	// 1. consider current cell (lowest value)
+	cell := pos.getCell(s.Grid)
+	unitCell := pos.getCell(s.UnitGrid)
+
+	if cell == CellMeA && unitCell == CellNeutral {
+		// consider level 1
+		if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
+			s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
+			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.DistGrid))
+		}
+		// consider level 2
+		if s.Me.income() > 2*CostKeep2 &&
+			s.Me.Gold > CostTrain2 {
+			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.DistGrid))
+		}
+		// consider level 3
+		if s.Me.NbUnits >= s.Op.NbUnits &&
+			s.Me.income() > 2*CostKeep3 &&
+			s.Me.Gold > CostTrain3 {
+			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.DistGrid))
+		}
+	}
+
+	// 2. consider neighbourhood (greater value)
 	for _, dir := range dirs {
 		nbrPos := pos.neighbour(dir)
-		if nbrPos != nil {
-			nbrCell := nbrPos.getCell(s.Grid)
-			unitCell := nbrPos.getCell(s.UnitGrid)
-			if nbrCell == cellType && unitCell == CellNeutral {
-				if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
-					s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
-					cmds.appendTrain(1, nbrPos, highVal)
-				} else if s.Me.NbUnits >= s.Op.NbUnits &&
-					s.Me.income() > 2*CostKeep3 &&
-					s.Me.Gold > CostTrain3 {
-					cmds.appendTrain(3, nbrPos, highVal)
-				} else if s.Me.income() > 2*CostKeep2 &&
-					s.Me.Gold > CostTrain2 {
-					cmds.appendTrain(2, nbrPos, highVal)
-				} else {
-					// found a cell but couldn't train
-					return
-				}
+		if nbrPos == nil {
+			continue
+		}
+		nbrCell := nbrPos.getCell(s.Grid)
+		if myActiveCell(nbrCell) {
+			// will be considered in its own right
+			continue
+		}
+		nbrUnitCell := nbrPos.getCell(s.UnitGrid)
+
+		if (nbrCell == CellNeutral || nbrCell == CellOpNA || nbrCell == CellOpNM || nbrCell == CellOpNT) &&
+			nbrUnitCell == CellNeutral {
+			// consider level 1
+			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
+				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
+				cmds.appendTrain(1, nbrPos, 6)
+			}
+			// consider level 2
+			if s.Me.income() > 2*CostKeep2 &&
+				s.Me.Gold > CostTrain2 {
+				cmds.appendTrain(2, nbrPos, 4)
+			}
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 5)
 			}
 		}
+
+		if (nbrCell == CellOpA || nbrCell == CellOpM) && nbrUnitCell == CellNeutral {
+			// consider level 1
+			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
+				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
+				cmds.appendTrain(1, nbrPos, 9)
+			}
+			// consider level 2
+			if s.Me.income() > 2*CostKeep2 &&
+				s.Me.Gold > CostTrain2 {
+				cmds.appendTrain(2, nbrPos, 7)
+			}
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 6)
+			}
+		}
+
+		if nbrUnitCell == CellOpU2 {
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 10)
+			}
+		}
+
+		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 11)
+			}
+		}
+
+		if nbrCell == CellOpH {
+			// consider level 1
+			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
+				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
+				cmds.appendTrain(1, nbrPos, 12)
+			}
+			// consider level 2
+			if s.Me.income() > 2*CostKeep2 &&
+				s.Me.Gold > CostTrain2 {
+				cmds.appendTrain(2, nbrPos, 12)
+			}
+			// consider level 3
+			if s.Me.NbUnits >= s.Op.NbUnits &&
+				s.Me.income() > 2*CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 12)
+			}
+		}
+
 	} //for dir
 }
 
@@ -819,7 +913,6 @@ func trainUnits(s *State) {
 		dirs = DirDRUL
 	}
 
-	// train in new areas
 	for j := 0; j < GridDim; j++ {
 		for i := 0; i < GridDim; i++ {
 			if s.Me.Gold < CostTrain1 {
@@ -828,54 +921,14 @@ func trainUnits(s *State) {
 			}
 			pos.set(i, j)
 			cell := pos.getCell(s.Grid)
-			if cell != CellMeA && cell != CellMeH && cell != CellMeM {
+			if !myActiveCell(cell) {
+				// can only train on and next to active area
 				continue
 			}
-			trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellNeutral, 12)
+			trainUnitInNeighbourhood(candidateCmds, s, pos, dirs)
 		} // for i
 	} // for j
 
-	if len(candidateCmds.Candidates) == 0 {
-		// train in areas neighbouring inactive Op cells
-		for j := 0; j < GridDim; j++ {
-			for i := 0; i < GridDim; i++ {
-				if s.Me.Gold < CostTrain1 {
-					// no gold to train any units
-					return
-				}
-				pos.set(i, j)
-				cell := pos.getCell(s.Grid)
-				if cell != CellOpNA && cell != CellOpNM && cell != CellOpNT {
-					continue
-				}
-				trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 9)
-			} // for i
-		} // for j
-	}
-
-	if len(candidateCmds.Candidates) == 0 {
-		// train in areas neighbouring active Op cells
-		for j := 0; j < GridDim; j++ {
-			for i := 0; i < GridDim; i++ {
-				if s.Me.Gold < CostTrain1 {
-					// no gold to train any units
-					return
-				}
-				pos.set(i, j)
-				cell := pos.getCell(s.Grid)
-				if cell != CellOpA && cell != CellOpM && cell != CellOpT && cell != CellOpP {
-					continue
-				}
-				trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 6)
-			} // for i
-		} // for j
-	}
-
-	if len(candidateCmds.Candidates) == 0 {
-		// worst case train at headquarters
-		pos.set(g.HqMe.X, g.HqMe.Y)
-		trainUnitInNeighbourhood(candidateCmds, s, pos, dirs, CellMeA, 3)
-	}
 	// sort and execute
 	candidateCmds.sort()
 	for _, cmd := range candidateCmds.Candidates {
@@ -934,6 +987,7 @@ func buildMinesAndTowers(s *State) {
 }
 
 func main() {
+	g.TurnTime = time.Now()
 	initGame()
 	for i := 0; ; i++ {
 		s := &State{}
@@ -952,5 +1006,8 @@ func main() {
 
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
+
+		fmt.Fprintf(os.Stderr, "Turn %d. elapsed: %v, response: %v\n", i, time.Since(g.TurnTime), time.Since(g.RespTime))
+		g.TurnTime = time.Now()
 	} // for
 }
