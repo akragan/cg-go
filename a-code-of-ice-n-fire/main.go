@@ -9,6 +9,12 @@ import "time"
 //import "strings"
 
 const (
+	StandGroundL1 = true
+	StandGroundL2 = true
+
+	SortUnitsAsc  = true
+	SortUnitsDesc = false // used only if SortUnitsAsc==false
+
 	GridDim = 12
 
 	IdMe   = 0
@@ -624,6 +630,12 @@ func (s *State) init() {
 			s.Op.addUnit(u)
 		}
 	}
+	// sort units from l1 to l3 (l1 will move first - the idea being for them to be moving into enemy's camp first)
+	if SortUnitsAsc {
+		sort.Slice(s.Units, func(i, j int) bool { return s.Units[i].Level < s.Units[j].Level })
+	} else if SortUnitsDesc {
+		sort.Slice(s.Units, func(i, j int) bool { return s.Units[i].Level > s.Units[j].Level })
+	}
 	g.RespTime = time.Now()
 	s.Commands = []*Command{&Command{Type: CmdWait}}
 }
@@ -890,9 +902,10 @@ func moveUnits(s *State) {
 				}
 				continue
 			}
-			// standing my ground if faced with uncapturable enemy (lvl2 right now)
+			// standing my ground if faced with uncapturable enemy (lvl 1 and 2)
 			// i.e. issuing invalid move command on purpose
-			if u.Level == 2 && unitCell == CellOpU2 {
+			if StandGroundL2 && u.Level == 2 && unitCell == CellOpU2 ||
+				StandGroundL1 && u.Level == 1 && unitCell == CellOpU {
 				candidateCmds.appendMove(u, pos, pos, 0)
 				continue
 			}
@@ -1221,7 +1234,7 @@ func main() {
 		s := &State{}
 		s.init()
 
-		// chekc chain train win before move
+		// check chain train win before move
 		checkChainTrainWin(s)
 
 		// 0. look for BUILD MINE and/or TOWER commands
