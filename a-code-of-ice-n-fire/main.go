@@ -21,8 +21,6 @@ const (
 	//Min2 = 2
 	MaxTowers = 5
 
-	NeutralPctThreshold = 0.2
-
 	//constants
 	GridDim = 12
 
@@ -963,7 +961,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 		// copy pos
 		pos := &Position{X: pos.X, Y: pos.Y}
 		// consider level 1
-		if (s.Me.NbUnits < Min1 || s.NeutralPct > NeutralPctThreshold) &&
+		if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 			s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
 			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.Me.DistGrid))
 		}
@@ -1002,7 +1000,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 		if (nbrCell == CellNeutral || nbrCell == CellOpNA || nbrCell == CellOpNM || nbrCell == CellOpNT) &&
 			nbrUnitCell == CellNeutral {
 			// consider level 1
-			if (s.Me.NbUnits < Min1 || s.NeutralPct > NeutralPctThreshold) &&
+			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
 				cmds.appendTrain(1, nbrPos, 6+bonus)
 			}
@@ -1022,7 +1020,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 		if (nbrCell == CellOpA || nbrCell == CellOpM) && nbrUnitCell == CellNeutral {
 			// consider level 1
-			if (s.Me.NbUnits < Min1 || s.NeutralPct > NeutralPctThreshold) &&
+			if (s.Me.NbUnits < Min1 || s.NeutralPct > 0.2) &&
 				s.Me.Gold > CostTrain1 && s.Me.Gold < 2*CostTrain2 {
 				cmds.appendTrain(1, nbrPos, 9+bonus)
 			}
@@ -1224,7 +1222,7 @@ func buildMinesAndTowers(s *State) {
 		}
 	}
 	// build towers on Op ChainTrainWin path
-	if (s.Op.ChainTrainWinNext || s.NeutralPct < NeutralPctThreshold) &&
+	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
 		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
 		pos := s.Op.MinDistGoal
 		for (pos.getCell(s.Grid) != CellMeA ||
