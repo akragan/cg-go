@@ -1266,6 +1266,8 @@ func buildMinesAndTowers(s *State) {
 			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
 			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
 			s.addBuildTower(pos)
+		} else {
+			fmt.Fprintf(os.Stderr, "Tried to build tower but couldn't find a spot starting at (%d,%d)\n", pos.X, pos.Y)
 		}
 	}
 	// build mine near HQ
