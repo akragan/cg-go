@@ -1231,13 +1231,17 @@ func buildMinesAndTowers(s *State) {
 			!pos.sameAs(g.Me.Hq) {
 			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 		}
-		if !pos.sameAs(g.Me.Hq) && !pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
+		if !pos.sameAs(g.Me.Hq) &&
+			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
 			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
 			s.addBuildTower(pos)
 		}
 	}
 	// build mine near HQ
-	if s.Me.NbUnits >= Min1 && s.Op.income() > s.Me.income() && s.Me.NbMines == 0 && s.Me.Gold > s.Me.mineCost() {
+	if s.Me.NbUnits >= Min1 &&
+		s.Op.income() > s.Me.income() &&
+		s.Me.NbMines == 0 &&
+		s.Me.Gold > s.Me.mineCost() {
 		pos := getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			s.addBuildMine(pos)
