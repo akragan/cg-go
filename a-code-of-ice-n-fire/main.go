@@ -4,6 +4,7 @@ import "fmt"
 import "sort"
 import "os"
 import "time"
+import "math/rand"
 
 //import "bufio"
 //import "strings"
@@ -89,7 +90,10 @@ var (
 	g = &Game{}
 
 	DirDRUL = []int{DirDown, DirRight, DirUp, DirLeft}
+	DirRDLU = []int{DirRight, DirDown, DirLeft, DirUp}
+
 	DirLURD = []int{DirLeft, DirUp, DirRight, DirDown}
+	DirULDR = []int{DirUp, DirLeft, DirDown, DirRight}
 )
 
 type PositionQueue []*Position
@@ -630,7 +634,8 @@ func (s *State) init() {
 			s.Op.addUnit(u)
 		}
 	}
-	// sort units from l1 to l3 (l1 will move first - the idea being for them to be moving into enemy's camp first)
+	// sort units from l1 to l3 (l1 will move first)
+	// the idea being for them to be moving into enemy's camp first)
 	if SortUnitsAsc {
 		sort.Slice(s.Units, func(i, j int) bool { return s.Units[i].Level < s.Units[j].Level })
 	} else if SortUnitsDesc {
@@ -795,12 +800,26 @@ func isWedge(pos *Position, grid [][]rune) bool {
 	return lOpA && rOpA && !uOpA && !dOpA || !lOpA && !rOpA && uOpA && dOpA
 }
 
+func boolRand() bool {
+	return rand.Intn(2) == 0
+}
+
+func randDirs() []int {
+	r := boolRand()
+	switch {
+	case r && g.Me.Hq.X == 0:
+		return DirDRUL
+	case !r && g.Me.Hq.X == 0:
+		return DirRDLU
+	case r && g.Me.Hq.X != 0:
+		return DirLURD
+	default:
+		return DirULDR
+	}
+}
+
 func moveUnits(s *State) {
 	pos := &Position{}
-	dirs := DirDRUL
-	if g.Me.Hq.X != 0 {
-		dirs = DirLURD
-	}
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
 		if u.Owner != IdMe || u.Id == -1 { // -1 for newly trained units that cannot move
@@ -808,6 +827,7 @@ func moveUnits(s *State) {
 		}
 		pos.set(u.X, u.Y)
 		//fmt.Fprintf(os.Stderr, "Unit: %d Pos: %d %d HQ: %d %d \n", u.Id, pos.X, pos.Y, g.HqMe.X, g.HqMe.Y)
+		dirs := randDirs()
 		candidateCmds := &CommandSelector{}
 		for _, dir := range dirs {
 
@@ -928,7 +948,7 @@ func moveUnits(s *State) {
 	}
 }
 
-func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, dirs []int) {
+func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 	// 1. consider current cell (lowest value)
 	cell := pos.getCell(s.Grid)
@@ -957,6 +977,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position, di
 	}
 
 	// 2. consider neighbourhood (greater value)
+	dirs := randDirs()
 	for _, dir := range dirs {
 		nbrPos := pos.neighbour(dir)
 		if nbrPos == nil {
@@ -1115,11 +1136,6 @@ func trainUnits(s *State) {
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
 
-	dirs := DirLURD
-	if g.Me.Hq.X != 0 {
-		dirs = DirDRUL
-	}
-
 	for j := 0; j < GridDim; j++ {
 		for i := 0; i < GridDim; i++ {
 			if s.Me.Gold < CostTrain1 {
@@ -1132,7 +1148,7 @@ func trainUnits(s *State) {
 				// can only train on and next to active area
 				continue
 			}
-			trainUnitInNeighbourhood(candidateCmds, s, pos, dirs)
+			trainUnitInNeighbourhood(candidateCmds, s, pos)
 		} // for i
 	} // for j
 
