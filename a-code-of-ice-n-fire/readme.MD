@@ -1,5 +1,6 @@
 A Code of Ice and Fire
-----------------------
+-------------------------------
+
 Each turn:
 
 * check chain-train-win before move
@@ -38,5 +39,3 @@ Each turn:
 * check chain train win after move
 
 * look at TRAIN commands
-
-

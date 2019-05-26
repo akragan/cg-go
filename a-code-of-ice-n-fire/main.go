@@ -969,7 +969,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.Me.DistGrid))
 		}
 		// consider level 3
-		if s.Me.NbUnits >= s.Op.NbUnits &&
+		if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 			s.Me.income() > 2*CostKeep3 &&
 			s.Me.Gold > CostTrain3 {
 			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.Me.DistGrid))
@@ -1008,7 +1008,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 				cmds.appendTrain(2, nbrPos, 4+bonus)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 5+bonus)
@@ -1028,7 +1028,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 				cmds.appendTrain(2, nbrPos, 8+bonus)
 			}
 			// consider level 3
-			if s.Me.NbUnits >= s.Op.NbUnits &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 7+bonus)
@@ -1043,7 +1043,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 				cmds.appendTrain(2, nbrPos, 11+bonus)
 			}
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10+bonus)
@@ -1052,7 +1052,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 		if nbrUnitCell == CellOpU2 {
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12+bonus)
@@ -1061,7 +1061,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
 			// consider level 3
-			if (s.Me.NbUnits >= s.Op.NbUnits) &&
+			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 < s.Op.NbUnits3) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
