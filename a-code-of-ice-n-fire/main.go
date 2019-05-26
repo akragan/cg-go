@@ -17,7 +17,7 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowers = 5
+	MaxTowers = 10
 	Min1      = 3
 	//Min2      = 2
 
@@ -201,6 +201,19 @@ func (this *Position) findNeighbour(grid [][]rune, cell rune) int {
 		}
 	}
 	return -1
+}
+
+func (this *Position) isOrHasNeighbour(grid [][]rune, cell rune) bool {
+	if this.getCell(grid) == cell {
+		return true
+	}
+	for _, dir := range DirDRUL {
+		nbrPos := this.neighbour(dir)
+		if nbrPos != nil && nbrPos.getCell(grid) == cell {
+			return true
+		}
+	}
+	return false
 }
 
 func (this *Position) isOrHasNeighbourAtDist2(grid [][]rune, cell rune) bool {
@@ -441,7 +454,8 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 			if pos.Dist != 0 {
 				pos.setIntCell(this.DirGrid, pos.findNeighbourDir(this.DistGrid, pos.Dist-1))
 			}
-			for _, dir := range DirDRUL {
+			dirs := randDirs()
+			for _, dir := range dirs {
 				nbrPos := pos.neighbour(dir)
 				if nbrPos != nil && nbrPos.getIntCell(this.DistGrid) == -1 {
 					nbrPos.Dist = pos.Dist + 1
@@ -1244,6 +1258,44 @@ func getHqMinePosition() *Position {
 	return &Position{X: 10, Y: 11}
 }
 
+func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
+	for (pos.getCell(s.Grid) != CellMeA ||
+		pos.getCell(s.UnitGrid) != CellNeutral ||
+		pos.getCell(g.MineGrid) == CellMine) ||
+		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) ||
+		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) &&
+			!pos.sameAs(g.Me.Hq) {
+		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
+		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
+	}
+	fmt.Fprintf(os.Stderr, "\t candidate at (%d,%d)\n", pos.X, pos.Y)
+	if !pos.sameAs(g.Me.Hq) {
+		fmt.Fprintf(os.Stderr, "\t accepted (%d,%d)\n", pos.X, pos.Y)
+		return pos
+	}
+	fmt.Fprintf(os.Stderr, "\t rejected (%d,%d)\n", pos.X, pos.Y)
+	return nil
+}
+
+func findTowerSpotBeyondDist1(s *State, pos *Position) *Position {
+	for (pos.getCell(s.Grid) != CellMeA ||
+		pos.getCell(s.UnitGrid) != CellNeutral ||
+		pos.getCell(g.MineGrid) == CellMine) ||
+		pos.isOrHasNeighbour(s.Grid, CellMeT) ||
+		pos.isOrHasNeighbour(s.Grid, CellMeNT) &&
+			!pos.sameAs(g.Me.Hq) {
+		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
+		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
+	}
+	fmt.Fprintf(os.Stderr, "\t candidate at (%d,%d)\n", pos.X, pos.Y)
+	if !pos.sameAs(g.Me.Hq) {
+		fmt.Fprintf(os.Stderr, "\t accepted (%d,%d)\n", pos.X, pos.Y)
+		return pos
+	}
+	fmt.Fprintf(os.Stderr, "\t rejected (%d,%d)\n", pos.X, pos.Y)
+	return nil
+}
+
 func buildMinesAndTowers(s *State) {
 	// build tower near HQ
 	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
@@ -1255,19 +1307,15 @@ func buildMinesAndTowers(s *State) {
 	// build towers on Op ChainTrainWin path
 	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
 		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
-		pos := s.Op.MinDistGoal
-		for (pos.getCell(s.Grid) != CellMeA ||
-			pos.getCell(s.UnitGrid) != CellNeutral ||
-			pos.getCell(g.MineGrid) == CellMine) &&
-			!pos.sameAs(g.Me.Hq) {
-			pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
-		}
-		if !pos.sameAs(g.Me.Hq) &&
-			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) &&
-			!pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) {
-			s.addBuildTower(pos)
+		if spot := findTowerSpotBeyondDist2(s, s.Op.MinDistGoal); spot != nil {
+			s.addBuildTower(spot)
 		} else {
-			fmt.Fprintf(os.Stderr, "Tried to build tower but couldn't find a spot starting at (%d,%d)\n", pos.X, pos.Y)
+			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+			if spot := findTowerSpotBeyondDist1(s, s.Op.MinDistGoal); spot != nil {
+				s.addBuildTower(spot)
+			} else {
+				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+			}
 		}
 	}
 	// build mine near HQ
