@@ -896,7 +896,7 @@ func moveUnits(s *State) {
 				continue
 			}
 			// Op unit l1 capturing moves (only by any l2 or l3 unit)
-			if (u.Level == 3 || u.Level == 2) && unitCell == CellOpU && !myUnitCell(unitCell) {
+			if (u.Level == 3 || u.Level == 2) && unitCell == CellOpU && nbrCell != CellOpP && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 13)
 				//s.addMove(u, pos, nbrPos)
 				continue
@@ -965,6 +965,9 @@ func moveUnits(s *State) {
 	}
 }
 
+// this produces dupe candidate train commands (in the same spots)
+// as cells are neighbours of several other cells
+// needs to be sorted and de-duped before execution
 func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 	// 1. consider current cell (lowest value)
