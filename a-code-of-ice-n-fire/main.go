@@ -10,12 +10,18 @@ import "math/rand"
 //import "strings"
 
 const (
+	//options
 	StandGroundL1 = true
 	StandGroundL2 = true
 
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
+	MaxTowers = 5
+	Min1      = 3
+	//Min2      = 2
+
+	//constants
 	GridDim = 12
 
 	IdMe   = 0
@@ -79,9 +85,6 @@ const (
 	DirUp    = 1
 	DirRight = 2
 	DirDown  = 3
-
-	Min1 = 3
-	Min2 = 2
 
 	InfDist = 100
 )
@@ -1220,7 +1223,7 @@ func buildMinesAndTowers(s *State) {
 	}
 	// build towers on Op ChainTrainWin path
 	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
-		s.Me.NbTowers < 5 && s.Me.Gold > CostTower {
+		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
 		pos := s.Op.MinDistGoal
 		for (pos.getCell(s.Grid) != CellMeA ||
 			pos.getCell(s.UnitGrid) != CellNeutral ||
