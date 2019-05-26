@@ -1079,12 +1079,21 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 			}
 		}
 
-		if nbrCell == CellOpT || nbrCell == CellOpP || nbrUnitCell == CellOpU3 {
+		if nbrCell == CellOpT || nbrCell == CellOpP {
 			// consider level 3
 			if (s.Me.NbUnits >= s.Op.NbUnits || s.Me.NbUnits3 == 0 && s.Op.NbUnits3 > 0) &&
 				s.Me.income() > 2*CostKeep3 &&
 				s.Me.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
+			}
+		}
+
+		if nbrUnitCell == CellOpU3 {
+			// consider level 3
+			if (!nbrPos.isOrHasNeighbourAtDist2(s.UnitGrid, CellMeU3) || s.Me.NbUnits3 == 0 && s.Op.NbUnits3 > 0) &&
+				s.Me.income() > CostKeep3 &&
+				s.Me.Gold > CostTrain3 {
+				cmds.appendTrain(3, nbrPos, 15+bonus)
 			}
 		}
 
