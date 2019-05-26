@@ -17,9 +17,11 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowers = 10
+	MaxTowers = 5
 	Min1      = 3
 	//Min2      = 2
+
+	RandomDirsAtInitDistGrid = true
 
 	//constants
 	GridDim = 12
@@ -455,7 +457,10 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 			if pos.Dist != 0 {
 				pos.setIntCell(this.DirGrid, pos.findNeighbourDir(this.DistGrid, pos.Dist-1))
 			}
-			dirs := randDirs()
+			dirs := DirDRUL
+			if RandomDirsAtInitDistGrid {
+				dirs = randDirs()
+			}
 			for _, dir := range dirs {
 				nbrPos := pos.neighbour(dir)
 				if nbrPos != nil && nbrPos.getIntCell(this.DistGrid) == -1 {
