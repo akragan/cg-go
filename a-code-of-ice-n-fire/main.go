@@ -745,6 +745,20 @@ func (this *CommandSelector) sort() {
 	sort.Slice(this.Candidates, func(i, j int) bool { return this.Candidates[i].Value > this.Candidates[j].Value })
 }
 
+func (this *CommandSelector) dedupe() {
+	// dedupe by setting level to 0 to remove
+	intSet := make(map[int]bool)
+	for _, cmd := range this.Candidates {
+		intPos := cmd.To.toInt()
+		_, dupe := intSet[intPos]
+		if dupe {
+			cmd.Level = 0
+		} else {
+			intSet[intPos] = true
+		}
+	}
+}
+
 func (this *CommandSelector) best() *CandidateCommand {
 	if len(this.Candidates) == 0 {
 		return nil
@@ -1155,10 +1169,15 @@ func trainUnits(s *State) {
 		} // for i
 	} // for j
 
-	// sort and execute
+	// sort, dedupe and execute
 	candidateCmds.sort()
+	candidateCmds.dedupe()
 	fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
 	for i, cmd := range candidateCmds.Candidates {
+		if cmd.Level == 0 {
+			//de-duped
+			continue
+		}
 		cost := costTrain(cmd.Level)
 		//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
 		if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
