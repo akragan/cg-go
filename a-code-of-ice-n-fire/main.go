@@ -163,6 +163,7 @@ func (this *Position) set(x int, y int) *Position {
 }
 
 func (this *Position) sameAs(other *Position) bool {
+
 	return this.X == other.X && this.Y == other.Y
 }
 
@@ -1261,10 +1262,10 @@ func getHqMinePosition() *Position {
 func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
 	for (pos.getCell(s.Grid) != CellMeA ||
 		pos.getCell(s.UnitGrid) != CellNeutral ||
-		pos.getCell(g.MineGrid) == CellMine) ||
+		pos.getCell(g.MineGrid) == CellMine ||
 		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT) &&
-			!pos.sameAs(g.Me.Hq) {
+		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT)) &&
+		!pos.sameAs(g.Me.Hq) {
 		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
 		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 	}
@@ -1280,10 +1281,10 @@ func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
 func findTowerSpotBeyondDist1(s *State, pos *Position) *Position {
 	for (pos.getCell(s.Grid) != CellMeA ||
 		pos.getCell(s.UnitGrid) != CellNeutral ||
-		pos.getCell(g.MineGrid) == CellMine) ||
+		pos.getCell(g.MineGrid) == CellMine ||
 		pos.isOrHasNeighbour(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbour(s.Grid, CellMeNT) &&
-			!pos.sameAs(g.Me.Hq) {
+		pos.isOrHasNeighbour(s.Grid, CellMeNT)) &&
+		!pos.sameAs(g.Me.Hq) {
 		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
 		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 	}
