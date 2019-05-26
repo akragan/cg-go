@@ -1038,7 +1038,7 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 			}
 		}
 
-		if nbrUnitCell == CellOpU {
+		if nbrUnitCell == CellOpU && nbrCell != CellOpP {
 			// consider level 2 and 3
 			if (s.Me.NbUnits < 5*s.Op.NbUnits) &&
 				s.Me.income() > 2*CostKeep2 &&
