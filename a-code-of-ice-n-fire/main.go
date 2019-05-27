@@ -17,8 +17,9 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowers = 5
-	Min1      = 3
+	MaxTowersInTouch = 2
+	MaxTowers        = 6
+	Min1             = 3
 	//Min2      = 2
 
 	RandomDirsAtInitDistGrid = true
@@ -407,11 +408,13 @@ type Game struct {
 	Mines       []*Position
 	MineGrid    [][]rune
 	InitNeutral int
+	InTouch     bool
 }
 
 func initGame() {
 	fmt.Scan(&g.NbMines)
 	g.InitNeutral = 0
+	g.InTouch = false
 	g.Mines = make([]*Position, g.NbMines)
 	g.MineGrid = make([][]rune, GridDim)
 
@@ -626,8 +629,12 @@ func (s *State) init() {
 		fmt.Scan(&u.Owner, &u.Id, &u.Level, &u.X, &u.Y)
 		s.Units[i] = u
 		pos.set(u.X, u.Y)
-
 		if u.Owner == IdMe {
+			if !g.InTouch {
+				if pos.findNeighbour(s.Grid, CellOpA) != -1 {
+					g.InTouch = true
+				}
+			}
 			pos.setDistance(g.Op.Hq)
 			if s.Me.MinUnitDistGoal > pos.Dist {
 				s.Me.MinUnitDistGoal = pos.Dist
@@ -1311,7 +1318,7 @@ func buildMinesAndTowers(s *State) {
 		}
 	}
 	// build towers on Op ChainTrainWin path
-	if (s.Op.ChainTrainWinNext || s.NeutralPct < 0.2) &&
+	if (s.Op.ChainTrainWinNext || g.InTouch && s.Me.NbTowers < MaxTowersInTouch || s.NeutralPct < 0.2) &&
 		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
 		if spot := findTowerSpotBeyondDist2(s, s.Op.MinDistGoal); spot != nil {
 			s.addBuildTower(spot)
