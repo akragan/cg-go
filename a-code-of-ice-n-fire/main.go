@@ -22,7 +22,7 @@ const (
 	Min1             = 3
 	//Min2      = 2
 
-	RandomDirsAtInitDistGrid = true
+	RandomDirsAtInitDistGrid = false
 
 	//constants
 	GridDim = 12
