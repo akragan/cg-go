@@ -285,7 +285,7 @@ func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
 		if this.X < GridDim-1 && this.Y > 0 {
 			return &Position{X: this.X + 1, Y: this.Y - 1}
 		}
-	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir2 == DirDown:
+	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir1 == DirDown:
 		if this.X > 0 && this.Y < GridDim-1 {
 			return &Position{X: this.X - 1, Y: this.Y + 1}
 		}
