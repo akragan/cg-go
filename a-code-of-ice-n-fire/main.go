@@ -5,6 +5,7 @@ import "sort"
 import "os"
 import "time"
 import "math/rand"
+import "math"
 
 //import "bufio"
 //import "strings"
@@ -23,6 +24,9 @@ const (
 	//Min2      = 2
 
 	RandomDirsAtInitDistGrid = false
+
+	EvalDiscountRate    = 5.0
+	EvalHqCaptureFactor = 100.0
 
 	//constants
 	GridDim = 12
@@ -319,6 +323,11 @@ type Player struct {
 	MinDistGoal       *Position
 	ChainTrainWin     bool
 	ChainTrainWinNext bool
+
+	ChainTrainWinCost     int
+	RoundsToHqCapture     float64
+	MilitaryPower         int
+	ExpectedMilitaryPower int
 }
 
 func (this *Player) addUnit(u *Unit) {
@@ -338,12 +347,16 @@ func (this *Player) addUnit(u *Unit) {
 
 func (this *Player) addActiveArea(pos *Position) {
 	this.ActiveArea++
+	var dist int
 	if g.Turn > 0 {
-		dist := pos.getIntCell(this.Game.DistGrid)
-		if dist < this.MinDistGoal.Dist {
-			this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
-		}
+		dist = pos.getIntCell(this.Game.DistGrid)
+	} else {
+		dist = 22
 	}
+	if dist < this.MinDistGoal.Dist {
+		this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
+	}
+
 }
 
 func (this *Player) income() int {
@@ -393,7 +406,9 @@ type GamePlayer struct {
 }
 
 type Game struct {
-	Turn     int
+	Turn           int
+	DiscountFactor float64
+
 	TurnTime time.Time
 	RespTime time.Time
 
@@ -407,7 +422,15 @@ type Game struct {
 	InTouch     bool
 }
 
+func (g *Game) nextTurn() {
+	g.Turn += 1
+	g.DiscountFactor = math.Exp((float64(g.Turn)/100.0 - 1.0) * EvalDiscountRate)
+}
+
 func initGame() {
+	g.Turn = 0
+	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
+
 	fmt.Scan(&g.NbMines)
 	g.InitNeutral = 0
 	g.InTouch = false
@@ -499,6 +522,40 @@ type State struct {
 	UnitGrid    [][]rune
 
 	Commands []*Command
+
+	MilitaryPowerEval float64
+	HqCaptureEval     float64
+	Eval              float64
+}
+
+func (p *Player) evaluate() {
+	p.RoundsToHqCapture = 1000.0
+	if p.income() > 0 {
+		p.RoundsToHqCapture = float64(p.ChainTrainWinCost-p.Gold) / float64(p.income())
+	}
+
+	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
+	p.ExpectedMilitaryPower = p.MilitaryPower + (100-g.Turn)*p.income()
+	if p.ExpectedMilitaryPower < 0 {
+		p.ExpectedMilitaryPower = 0
+	}
+
+}
+
+func (s *State) evaluate(label string) {
+	fmt.Fprintf(os.Stderr, "%d: evaluating state %s\n", g.Turn, label)
+
+	s.Me.evaluate()
+	s.Op.evaluate()
+
+	s.HqCaptureEval = EvalHqCaptureFactor * (s.Op.RoundsToHqCapture - s.Me.RoundsToHqCapture) * (1 - g.DiscountFactor)
+	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
+	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
+
+	fmt.Fprintf(os.Stderr, "%d: discount factor=%v\n", g.Turn, g.DiscountFactor)
+	fmt.Fprintf(os.Stderr, "%d: HQ capture eval=%v\tMeTurnsToHQ=%v OpTurnsToHQ=%v\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
+	fmt.Fprintf(os.Stderr, "%d: military eval=%v\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	fmt.Fprintf(os.Stderr, "%d: eval=%v\n", g.Turn, s.Eval)
 }
 
 func (s *State) init() {
@@ -540,8 +597,10 @@ func (s *State) init() {
 		s.UnitGrid[i] = []rune(RowNeutral)
 	}
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
+	s.Me.ChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
 	s.Me.ChainTrainWin = s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1
 	s.Me.ChainTrainWinNext = s.Me.Gold+s.Me.income() >= (s.Me.MinDistGoal.Dist-1)*CostTrain1
+	s.Op.ChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
 	s.Op.ChainTrainWin = s.Op.Gold >= s.Op.MinDistGoal.Dist*CostTrain1
 	s.Op.ChainTrainWinNext = s.Op.Gold+s.Op.income() >= (s.Op.MinDistGoal.Dist-1)*CostTrain1
 
@@ -728,7 +787,7 @@ func (s *State) action() string {
 			cmdsStr += fmt.Sprintf("BUILD TOWER %d %d", cmd.X, cmd.Y)
 		}
 	}
-	cmdsStr += fmt.Sprintf(";MSG A:%d U:%d I:%d", s.Me.ActiveArea, s.Me.Upkeep, s.Me.income())
+	cmdsStr += fmt.Sprintf(";MSG Eval:%.1f", s.Eval)
 	return cmdsStr
 }
 
@@ -1145,8 +1204,8 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 	} //for dir
 }
 
-func checkChainTrainWin(s *State) {
-	if s.Me.Gold < s.Me.MinDistGoal.Dist*CostTrain1 {
+func checkChainTrainWin(s *State, calcActualCost bool) {
+	if !calcActualCost && s.Me.Gold < s.Me.MinDistGoal.Dist*CostTrain1 {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "Attempting ChainTrainWin: Gold=%d TrainChainCost=%d\n", s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
@@ -1157,7 +1216,7 @@ func checkChainTrainWin(s *State) {
 	//fmt.Fprintf(os.Stderr, "start loop\n")
 	for posDist != 0 {
 		dir := pos.getIntCell(g.Me.DirGrid)
-		fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
+		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
 		pos = pos.neighbour(dir)
 		posDist = pos.getIntCell(g.Me.DistGrid)
 		cell := pos.getCell(s.Grid)
@@ -1172,6 +1231,7 @@ func checkChainTrainWin(s *State) {
 		actualCost += costTrain(level)
 		cmds.appendTrain(level, pos, posDist)
 	}
+	s.Me.ChainTrainWinCost = actualCost
 	//fmt.Fprintf(os.Stderr, "end loop\n")
 	if s.Me.Gold < actualCost {
 		fmt.Fprintf(os.Stderr, "Abort: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
@@ -1340,15 +1400,17 @@ func buildMinesAndTowers(s *State) {
 }
 
 func main() {
-	g.Turn = 0
 	g.TurnTime = time.Now()
 	initGame()
-	for ; ; g.Turn += 1 {
+	for ; ; g.nextTurn() {
 		s := &State{}
 		s.init()
 
-		// check chain train win before move
-		checkChainTrainWin(s)
+		// calculate chain train win cost / check before move
+		checkChainTrainWin(s, true)
+
+		// evaluate positions
+		s.evaluate("INIT")
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
@@ -1357,10 +1419,19 @@ func main() {
 		moveUnits(s)
 
 		// check chain train win after move
-		checkChainTrainWin(s)
+		checkChainTrainWin(s, true)
+
+		// evaluate positions
+		s.evaluate("AFTER MOVE")
 
 		// 2. look at TRAIN commands
 		trainUnits(s)
+
+		// check chain train win after move
+		checkChainTrainWin(s, true)
+
+		// evaluate positions
+		s.evaluate("AFTER TRAIN")
 
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
