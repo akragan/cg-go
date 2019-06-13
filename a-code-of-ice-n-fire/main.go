@@ -49,7 +49,7 @@ const (
 	CostKeep2 = 4
 	CostKeep3 = 20
 
-	CostMine1 = 20
+	CostMine  = 15
 	CostTower = 15
 
 	CellVoid    = '#'
@@ -285,7 +285,7 @@ func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
 		if this.X < GridDim-1 && this.Y > 0 {
 			return &Position{X: this.X + 1, Y: this.Y - 1}
 		}
-	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir1 == DirDown:
+	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir2 == DirDown:
 		if this.X > 0 && this.Y < GridDim-1 {
 			return &Position{X: this.X - 1, Y: this.Y + 1}
 		}
@@ -348,10 +348,6 @@ func (this *Player) addActiveArea(pos *Position) {
 
 func (this *Player) income() int {
 	return this.ActiveArea + 4*this.NbMines - this.Upkeep
-}
-
-func (this *Player) mineCost() int {
-	return CostMine1 + this.NbMines*4
 }
 
 type Building struct {
@@ -678,7 +674,7 @@ func (s *State) init() {
 func (s *State) addBuildMine(at *Position) {
 	s.Commands = append(s.Commands, &Command{Type: CmdBuildMine, X: at.X, Y: at.Y})
 	at.setCell(s.Grid, CellMeM)
-	s.Me.Gold -= s.Me.mineCost()
+	s.Me.Gold -= CostMine
 	s.Me.NbMines += 1
 }
 
@@ -1335,7 +1331,7 @@ func buildMinesAndTowers(s *State) {
 	if s.Me.NbUnits >= Min1 &&
 		s.Op.income() > s.Me.income() &&
 		s.Me.NbMines == 0 &&
-		s.Me.Gold > s.Me.mineCost() {
+		s.Me.Gold > CostMine {
 		pos := getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			s.addBuildMine(pos)
