@@ -25,6 +25,7 @@ const (
 
 	RandomDirsAtInitDistGrid        = false
 	AbortTrainCmdsOnNegativeEvalChg = true
+	TrainNegativeEvalPainTolerance  = -100.0
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
@@ -1324,10 +1325,10 @@ func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Pos
 	} //for dir
 }
 
-func trainUnits(s *State) {
+func trainUnits(s *State) *CommandSelector {
 	if s.Me.Gold < CostTrain1 {
 		// no gold to train any units
-		return
+		return nil
 	}
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
@@ -1346,26 +1347,7 @@ func trainUnits(s *State) {
 	// sort, dedupe and execute
 	candidateCmds.sort()
 	candidateCmds.dedupe()
-	fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
-	for i, cmd := range candidateCmds.Candidates {
-		if cmd.Level == 0 {
-			//de-duped
-			continue
-		}
-		cost := costTrain(cmd.Level)
-		//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
-		if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
-			s.addTrain(cmd.To, cmd.Level)
-			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-		} else {
-			if i < 10 {
-				fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-			} else {
-				fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-10)
-				break
-			}
-		}
-	}
+	return candidateCmds
 }
 
 func costTrain(level int) int {
@@ -1524,22 +1506,45 @@ func main() {
 		eval = s.Eval
 
 		// 2. look at TRAIN commands
-		trainUnits(s)
+		candidateCmds := trainUnits(s)
 
-		// check chain train win after train (as of next turn)
-		s.Op.calculateChainTrainWin(true, false)
-		s.Me.calculateChainTrainWin(true, false)
-		s.evaluate("AFTER TRAIN")
-		fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
-		trainEvalChange := s.Eval - eval
-		eval = s.Eval
+		if candidateCmds == nil {
+			fmt.Fprintf(os.Stderr, "No TRAIN candidates\n")
 
-		if AbortTrainCmdsOnNegativeEvalChg && trainEvalChange < -1.0 {
-			// abort train commands
-			fmt.Fprintf(os.Stderr, "%d: Aborting all TRAIN commands\n", g.Turn)
-			for _, cmd := range s.Commands {
-				if cmd.Type == CmdTrain {
-					cmd.Type = CmdAbort
+		} else {
+			fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
+			for i, cmd := range candidateCmds.Candidates {
+				if cmd.Level == 0 {
+					//de-duped
+					continue
+				}
+				cost := costTrain(cmd.Level)
+				//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
+				if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
+					s.addTrain(cmd.To, cmd.Level)
+					fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+
+					// check chain train win after each TRAIN cmd (as of next turn)
+					s.Op.calculateChainTrainWin(true, false)
+					s.Me.calculateChainTrainWin(true, false)
+					s.evaluate("AFTER TRAIN")
+					fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
+					trainEvalChange := s.Eval - eval
+					eval = s.Eval
+
+					if AbortTrainCmdsOnNegativeEvalChg && trainEvalChange < TrainNegativeEvalPainTolerance {
+						// abort train commands
+						fmt.Fprintf(os.Stderr, "%d: Aborting last TRAIN command\n", g.Turn)
+						s.Commands[len(s.Commands)-1].Type = CmdAbort
+						break
+					}
+				} else {
+					if i < 10 {
+						fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+					} else {
+						fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-10)
+						break
+					}
 				}
 			}
 		}
