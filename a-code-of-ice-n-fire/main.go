@@ -1304,12 +1304,12 @@ func trainUnits(s *State) {
 		//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
 		if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
 			s.addTrain(cmd.To, cmd.Level)
-			fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		} else {
 			if i < 10 {
-				fmt.Fprintf(os.Stderr, "Skipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+				fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 			} else {
-				fmt.Fprintf(os.Stderr, "Skipping %d more...\n", len(candidateCmds.Candidates)-10)
+				fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-10)
 				break
 			}
 		}
