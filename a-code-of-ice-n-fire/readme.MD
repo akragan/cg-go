@@ -1,6 +1,41 @@
 A Code of Ice and Fire
 -------------------------------
 
+Victory Conditions
+* Destroy the enemy headquarters.
+* After 100 turns, you have more military power than your opponent. The military power is computed by the sum of the cost of all of your units + your amount of gold
+
+	CostTrain1 = 10
+	CostTrain2 = 20
+	CostTrain3 = 30
+
+	CostKeep1 = 1
+	CostKeep2 = 4
+	CostKeep3 = 20
+
+	CostMine  = 15
+	CostTower = 15
+
+	Round=0..100
+	Gold 
+	+1 for each active cell owned
+	+4 for each active mine owned
+	
+	ActiveArea
+	Upkeep = U3*20 + U2*4 + U1*1
+	Income = ActiveArea + 4*ActiveMines - Upkeep
+	
+	MilitaryPower = U3*30 + U2*20 + U1*10 + Gold
+	ExpectedMilitaryPower = MAX(0, U3*30 + U2*20 + U1*10 + (100-Round)*Income)
+	DiscountFactor = Exp[(Round/100-1)*DiscountRate]
+
+	DeficitToHqCapture = CheapestPathToHq-Gold
+	RoundsToHqCapture = If(Income==0, 100, DeficitToHqCapture / Income)
+	
+	Eval = (ExpectedMilitaryPower[Me] - ExpectedMilitaryPower[Op])*DiscountFactor
+	 	+ (RoundsToHqCapture[Op] - RoundsToHqCapture[Me])*(1-DiscountFactor)
+
+
 Each turn:
 
 * check chain-train-win before move
@@ -39,3 +74,5 @@ Each turn:
 * check chain train win after move
 
 * look at TRAIN commands
+
+

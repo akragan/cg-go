@@ -25,7 +25,7 @@ const (
 
 	RandomDirsAtInitDistGrid        = false
 	AbortTrainCmdsOnNegativeEvalChg = true
-	TrainNegativeEvalPainTolerance  = -100.0
+	TrainNegativeEvalPainTolerance  = -50.0
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
