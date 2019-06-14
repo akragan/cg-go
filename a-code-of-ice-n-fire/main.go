@@ -304,6 +304,7 @@ func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
 type Player struct {
 	Id     int
 	Game   *GamePlayer
+	State  *State
 	Gold   int
 	Income int
 
@@ -324,10 +325,11 @@ type Player struct {
 	ChainTrainWin     bool
 	ChainTrainWinNext bool
 
-	ChainTrainWinCost     int
-	RoundsToHqCapture     float64
-	MilitaryPower         int
-	ExpectedMilitaryPower int
+	MinChainTrainWinCost    int
+	ActualChainTrainWinCost int
+	RoundsToHqCapture       float64
+	MilitaryPower           int
+	ExpectedMilitaryPower   int
 }
 
 func (this *Player) addUnit(u *Unit) {
@@ -531,7 +533,7 @@ type State struct {
 func (p *Player) evaluate() {
 	p.RoundsToHqCapture = 1000.0
 	if p.income() > 0 {
-		p.RoundsToHqCapture = float64(p.ChainTrainWinCost-p.Gold) / float64(p.income())
+		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.income())
 	}
 
 	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
@@ -561,13 +563,13 @@ func (s *State) evaluate(label string) {
 func (s *State) init() {
 	pos := &Position{}
 
-	s.Me = &Player{Game: g.Me}
+	s.Me = &Player{Id: IdMe, Game: g.Me, State: s}
 	s.Me.MinUnitDistGoal = InfDist
 	s.Me.MinDistGoal = &Position{X: -1, Y: -1, Dist: InfDist}
 	fmt.Scan(&s.Me.Gold)
 	fmt.Scan(&s.Me.Income)
 
-	s.Op = &Player{Game: g.Op}
+	s.Op = &Player{Id: IdOp, Game: g.Op, State: s}
 	s.Op.MinUnitDistGoal = InfDist
 	s.Op.MinDistGoal = &Position{X: -1, Y: -1, Dist: InfDist}
 	fmt.Scan(&s.Op.Gold)
@@ -597,10 +599,12 @@ func (s *State) init() {
 		s.UnitGrid[i] = []rune(RowNeutral)
 	}
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
-	s.Me.ChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
+	s.Me.MinChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
+	s.Me.ActualChainTrainWinCost = s.Me.MinChainTrainWinCost
 	s.Me.ChainTrainWin = s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1
 	s.Me.ChainTrainWinNext = s.Me.Gold+s.Me.income() >= (s.Me.MinDistGoal.Dist-1)*CostTrain1
-	s.Op.ChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
+	s.Op.MinChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
+	s.Op.ActualChainTrainWinCost = s.Op.MinChainTrainWinCost
 	s.Op.ChainTrainWin = s.Op.Gold >= s.Op.MinDistGoal.Dist*CostTrain1
 	s.Op.ChainTrainWinNext = s.Op.Gold+s.Op.income() >= (s.Op.MinDistGoal.Dist-1)*CostTrain1
 
@@ -1204,43 +1208,66 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 	} //for dir
 }
 
-func checkChainTrainWin(s *State, calcActualCost bool) {
-	if !calcActualCost && s.Me.Gold < s.Me.MinDistGoal.Dist*CostTrain1 {
-		return
+func (p *Player) isEnemyUnitLevel1(unitCell rune) bool {
+	if p.Id == IdMe {
+		return unitCell == CellOpU
 	}
-	fmt.Fprintf(os.Stderr, "Attempting ChainTrainWin: Gold=%d TrainChainCost=%d\n", s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
-	pos := s.Me.MinDistGoal
-	posDist := pos.getIntCell(g.Me.DistGrid)
+	return unitCell == CellMeU
+}
+
+func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
+	if p.Id == IdMe {
+		return unitCell == CellOpU2 || unitCell == CellOpU3
+	}
+	return unitCell == CellMeU2 || unitCell == CellMeU3
+}
+
+func (p *Player) isEnemyBuildingOrProtected(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpM || cell == CellOpT || cell == CellOpP
+	}
+	return cell == CellMeM || cell == CellMeT || cell == CellMeP
+}
+
+func (p *Player) calculateChainTrainWin() {
+	fmt.Fprintf(os.Stderr, "%s: Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
+	pos := p.MinDistGoal
+	posDist := pos.getIntCell(p.Game.DistGrid)
 	actualCost := 0
 	cmds := &CommandSelector{}
 	//fmt.Fprintf(os.Stderr, "start loop\n")
 	for posDist != 0 {
-		dir := pos.getIntCell(g.Me.DirGrid)
+		dir := pos.getIntCell(p.Game.DirGrid)
 		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
 		pos = pos.neighbour(dir)
-		posDist = pos.getIntCell(g.Me.DistGrid)
-		cell := pos.getCell(s.Grid)
-		unitCell := pos.getCell(s.UnitGrid)
+		posDist = pos.getIntCell(p.Game.DistGrid)
+		cell := pos.getCell(p.State.Grid)
+		unitCell := pos.getCell(p.State.UnitGrid)
 		level := 1
-		if unitCell == CellOpU {
+		if p.isEnemyUnitLevel1(unitCell) {
 			level = 2
 		}
-		if cell == CellOpT || cell == CellOpP || unitCell == CellOpU2 || unitCell == CellOpU3 {
+		if p.isEnemyBuildingOrProtected(cell) || p.isEnemyUnitLevel2or3(unitCell) {
 			level = 3
 		}
 		actualCost += costTrain(level)
-		cmds.appendTrain(level, pos, posDist)
+		if p.Id == IdMe {
+			cmds.appendTrain(level, pos, posDist)
+		}
 	}
-	s.Me.ChainTrainWinCost = actualCost
+	p.ActualChainTrainWinCost = actualCost
 	//fmt.Fprintf(os.Stderr, "end loop\n")
-	if s.Me.Gold < actualCost {
-		fmt.Fprintf(os.Stderr, "Abort: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
+	if p.Gold < actualCost {
+		fmt.Fprintf(os.Stderr, "%s Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Proceed: Gold=%d ActualCost=%d\n", s.Me.Gold, actualCost)
-	for i, cmd := range cmds.Candidates {
-		s.addTrain(cmd.To, cmd.Level)
-		fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+	fmt.Fprintf(os.Stderr, "%s Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+	if p.Id != IdMe {
+		return
+	}
+	for /*i*/ _, cmd := range cmds.Candidates {
+		p.State.addTrain(cmd.To, cmd.Level)
+		//fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 	}
 }
 
@@ -1334,10 +1361,10 @@ func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
 		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) ||
 		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT)) &&
 		!pos.sameAs(g.Me.Hq) {
-		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
+		//fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
 		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
 	}
-	fmt.Fprintf(os.Stderr, "\t candidate at (%d,%d)\n", pos.X, pos.Y)
+	fmt.Fprintf(os.Stderr, "%d: Tower candidate at (%d,%d)\n", g.Turn, pos.X, pos.Y)
 	if !pos.sameAs(g.Me.Hq) {
 		fmt.Fprintf(os.Stderr, "\t accepted (%d,%d)\n", pos.X, pos.Y)
 		return pos
@@ -1407,7 +1434,8 @@ func main() {
 		s.init()
 
 		// calculate chain train win cost / check before move
-		checkChainTrainWin(s, true)
+		s.Me.calculateChainTrainWin()
+		s.Op.calculateChainTrainWin()
 
 		// evaluate positions
 		s.evaluate("INIT")
@@ -1419,7 +1447,8 @@ func main() {
 		moveUnits(s)
 
 		// check chain train win after move
-		checkChainTrainWin(s, true)
+		s.Me.calculateChainTrainWin()
+		s.Op.calculateChainTrainWin()
 
 		// evaluate positions
 		s.evaluate("AFTER MOVE")
@@ -1428,7 +1457,8 @@ func main() {
 		trainUnits(s)
 
 		// check chain train win after move
-		checkChainTrainWin(s, true)
+		s.Me.calculateChainTrainWin()
+		s.Op.calculateChainTrainWin()
 
 		// evaluate positions
 		s.evaluate("AFTER TRAIN")
