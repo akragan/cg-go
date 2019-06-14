@@ -744,15 +744,18 @@ func (s *State) init() {
 				s.Op.NbMines++
 			}
 		case TypeTower:
+			cell := bPos.getCell(s.Grid)
 			if b.Owner == IdMe {
-				if bPos.getCell(s.Grid) == CellMeA {
+				// tower cell active or protected by another tower
+				if cell == CellMeA || cell == CellMeP {
 					bPos.setCell(s.Grid, CellMeT)
 				} else {
 					bPos.setCell(s.Grid, CellMeNT)
 				}
 				s.Me.NbTowers++
 			} else {
-				if bPos.getCell(s.Grid) == CellOpA {
+				// tower cell active or protected by another tower
+				if cell == CellOpA || cell == CellOpP {
 					bPos.setCell(s.Grid, CellOpT)
 					// set Op tower-protected cells
 					for _, dir := range DirDRUL {
