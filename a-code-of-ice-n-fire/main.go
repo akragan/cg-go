@@ -301,6 +301,43 @@ func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
 	return nil
 }
 
+type Building struct {
+	Type  int
+	Owner int
+	X     int
+	Y     int
+}
+
+func (this *Building) Pos() *Position {
+	return &Position{X: this.X, Y: this.Y}
+}
+
+type Unit struct {
+	Id    int
+	X     int
+	Y     int
+	Owner int
+	Level int
+}
+
+func (this *Unit) Pos() *Position {
+	return &Position{X: this.X, Y: this.Y}
+}
+
+type Command struct {
+	Type int
+	Info int
+	X    int
+	Y    int
+}
+
+func (this *Command) Pos() *Position {
+	return &Position{X: this.X, Y: this.Y}
+}
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
+
 type Player struct {
 	Id     int
 	Game   *GamePlayer
@@ -350,7 +387,7 @@ func (this *Player) addUnit(u *Unit) {
 func (this *Player) addActiveArea(pos *Position) {
 	this.ActiveArea++
 	var dist int
-	if g.Turn > 0 {
+	if this.Game.Initialized {
 		dist = pos.getIntCell(this.Game.DistGrid)
 	} else {
 		dist = 22
@@ -365,104 +402,107 @@ func (this *Player) income() int {
 	return this.ActiveArea + 4*this.NbMines - this.Upkeep
 }
 
-type Building struct {
-	Type  int
-	Owner int
-	X     int
-	Y     int
+func (p *Player) isFriendlyUnit(unitCell rune) bool {
+	if p.Id == IdMe {
+		return myUnitCell(unitCell)
+	}
+	return opUnitCell(unitCell)
 }
 
-func (this *Building) Pos() *Position {
-	return &Position{X: this.X, Y: this.Y}
+func (p *Player) isEnemyUnitLevel1(unitCell rune) bool {
+	if p.Id == IdMe {
+		return unitCell == CellOpU
+	}
+	return unitCell == CellMeU
 }
 
-type Unit struct {
-	Id    int
-	X     int
-	Y     int
-	Owner int
-	Level int
+func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
+	if p.Id == IdMe {
+		return unitCell == CellOpU2 || unitCell == CellOpU3
+	}
+	return unitCell == CellMeU2 || unitCell == CellMeU3
 }
 
-func (this *Unit) Pos() *Position {
-	return &Position{X: this.X, Y: this.Y}
+func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpT || cell == CellOpP
+	}
+	return cell == CellMeT || cell == CellMeP
 }
 
-type Command struct {
-	Type int
-	Info int
-	X    int
-	Y    int
+func (p *Player) calculateChainTrainWin(moveFirst bool) {
+	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
+	pos := p.MinDistGoal
+	unitCell := pos.getCell(p.State.UnitGrid)
+	isFriendlyUnit := p.isFriendlyUnit(unitCell)
+	posDist := pos.getIntCell(p.Game.DistGrid)
+	actualCost := 0
+	cmds := &CommandSelector{}
+	//fmt.Fprintf(os.Stderr, "start loop\n")
+	for posDist != 0 {
+		dir := pos.getIntCell(p.Game.DirGrid)
+		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
+		pos = pos.neighbour(dir)
+		posDist = pos.getIntCell(p.Game.DistGrid)
+		cell := pos.getCell(p.State.Grid)
+		unitCell := pos.getCell(p.State.UnitGrid)
+		level := 1
+		if p.isEnemyUnitLevel1(unitCell) {
+			level = 2
+		}
+		if p.isEnemyTowerOrProtected(cell) || p.isEnemyUnitLevel2or3(unitCell) {
+			level = 3
+		}
+		if moveFirst && isFriendlyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
+			// first move free!
+			moveFirst = false
+		} else {
+			actualCost += costTrain(level)
+		}
+		if p.Id == IdMe {
+			cmds.appendTrain(level, pos, posDist)
+		}
+	}
+	p.ActualChainTrainWinCost = actualCost
+	//fmt.Fprintf(os.Stderr, "end loop\n")
+	if p.Gold < actualCost {
+		fmt.Fprintf(os.Stderr, "\t[%s] Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+	if p.Id != IdMe {
+		return
+	}
+	for /*i*/ _, cmd := range cmds.Candidates {
+		p.State.addTrain(cmd.To, cmd.Level)
+		//fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+	}
 }
 
-func (this *Command) Pos() *Position {
-	return &Position{X: this.X, Y: this.Y}
+func (p *Player) evaluate() {
+	p.RoundsToHqCapture = 1000.0
+	if p.income() > 0 {
+		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.income())
+	}
+
+	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
+	p.ExpectedMilitaryPower = p.MilitaryPower + (100-g.Turn)*p.income()
+	if p.ExpectedMilitaryPower < 0 {
+		p.ExpectedMilitaryPower = 0
+	}
+
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 type GamePlayer struct {
-	Name     string
-	Hq       *Position
-	Other    *GamePlayer
-	DistGrid [][]int
-	DirGrid  [][]int
-}
-
-type Game struct {
-	Turn           int
-	DiscountFactor float64
-
-	TurnTime time.Time
-	RespTime time.Time
-
-	Me *GamePlayer
-	Op *GamePlayer
-
-	NbMines     int
-	Mines       []*Position
-	MineGrid    [][]rune
-	InitNeutral int
-	InTouch     bool
-}
-
-func (g *Game) nextTurn() {
-	g.Turn += 1
-	g.DiscountFactor = math.Exp((float64(g.Turn)/100.0 - 1.0) * EvalDiscountRate)
-}
-
-func initGame() {
-	g.Turn = 0
-	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
-
-	fmt.Scan(&g.NbMines)
-	g.InitNeutral = 0
-	g.InTouch = false
-	g.Mines = make([]*Position, g.NbMines)
-	g.MineGrid = make([][]rune, GridDim)
-
-	g.Me = &GamePlayer{Name: "Me"}
-	g.Me.DistGrid = make([][]int, GridDim)
-	g.Me.DirGrid = make([][]int, GridDim)
-
-	g.Op = &GamePlayer{Name: "Op"}
-	g.Op.DistGrid = make([][]int, GridDim)
-	g.Op.DirGrid = make([][]int, GridDim)
-
-	g.Me.Other = g.Op
-	g.Op.Other = g.Me
-
-	for i := 0; i < GridDim; i++ {
-		g.MineGrid[i] = []rune(RowNeutral)
-		g.Me.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-		g.Me.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-		g.Op.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-		g.Op.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
-	}
-	for i := 0; i < g.NbMines; i++ {
-		mine := &Position{}
-		fmt.Scan(&mine.X, &mine.Y)
-		g.Mines[i] = mine
-		mine.setCell(g.MineGrid, CellMine)
-	}
+	Name        string
+	Hq          *Position
+	Other       *GamePlayer
+	DistGrid    [][]int
+	DirGrid     [][]int
+	Initialized bool
 }
 
 func (this *GamePlayer) initDistGrid(grid [][]rune) {
@@ -496,6 +536,7 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 		} // if/else cell void
 		//printDistGrid()
 	} // for queue non-empty
+	this.Initialized = true
 	printIntGrid(this.Name+" DistGrid", this.DistGrid)
 	printIntGrid(this.Name+" DirGrid", this.DirGrid)
 }
@@ -510,6 +551,70 @@ func printIntGrid(label string, grid [][]int) {
 		fmt.Fprintf(os.Stderr, "%v\n", line)
 	}
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
+
+type Game struct {
+	Turn           int
+	DiscountFactor float64
+
+	TurnTime time.Time
+	RespTime time.Time
+
+	Me *GamePlayer
+	Op *GamePlayer
+
+	NbMines     int
+	Mines       []*Position
+	MineGrid    [][]rune
+	InitNeutral int
+	InTouch     bool
+}
+
+func (g *Game) nextTurn() {
+	g.Turn += 1
+	g.DiscountFactor = math.Exp((float64(g.Turn)/100.0 - 1.0) * EvalDiscountRate)
+}
+
+func initGame() {
+	g.Turn = 0
+	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
+
+	fmt.Scan(&g.NbMines)
+	g.InitNeutral = 0
+	g.InTouch = false
+	g.Mines = make([]*Position, g.NbMines)
+	g.MineGrid = make([][]rune, GridDim)
+
+	g.Me = &GamePlayer{Name: "Me", Initialized: false}
+	g.Me.DistGrid = make([][]int, GridDim)
+	g.Me.DirGrid = make([][]int, GridDim)
+
+	g.Op = &GamePlayer{Name: "Op", Initialized: false}
+	g.Op.DistGrid = make([][]int, GridDim)
+	g.Op.DirGrid = make([][]int, GridDim)
+
+	g.Me.Other = g.Op
+	g.Op.Other = g.Me
+
+	for i := 0; i < GridDim; i++ {
+		g.MineGrid[i] = []rune(RowNeutral)
+		g.Me.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Me.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Op.DistGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		g.Op.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+	}
+	for i := 0; i < g.NbMines; i++ {
+		mine := &Position{}
+		fmt.Scan(&mine.X, &mine.Y)
+		g.Mines[i] = mine
+		mine.setCell(g.MineGrid, CellMine)
+	}
+}
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 type State struct {
 	Me          *Player
@@ -530,20 +635,6 @@ type State struct {
 	Eval              float64
 }
 
-func (p *Player) evaluate() {
-	p.RoundsToHqCapture = 1000.0
-	if p.income() > 0 {
-		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.income())
-	}
-
-	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
-	p.ExpectedMilitaryPower = p.MilitaryPower + (100-g.Turn)*p.income()
-	if p.ExpectedMilitaryPower < 0 {
-		p.ExpectedMilitaryPower = 0
-	}
-
-}
-
 func (s *State) evaluate(label string) {
 	fmt.Fprintf(os.Stderr, "%d: evaluating state %s\n", g.Turn, label)
 
@@ -554,10 +645,10 @@ func (s *State) evaluate(label string) {
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	fmt.Fprintf(os.Stderr, "%d: discount factor=%v\n", g.Turn, g.DiscountFactor)
-	fmt.Fprintf(os.Stderr, "%d: HQ capture eval=%v\tMeTurnsToHQ=%v OpTurnsToHQ=%v\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
-	fmt.Fprintf(os.Stderr, "%d: military eval=%v\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
-	fmt.Fprintf(os.Stderr, "%d: eval=%v\n", g.Turn, s.Eval)
+	fmt.Fprintf(os.Stderr, "%d: discount factor=%.2f\n", g.Turn, g.DiscountFactor)
+	fmt.Fprintf(os.Stderr, "%d: HQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
+	fmt.Fprintf(os.Stderr, "%d: military eval=%.1f\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\n", g.Turn, s.Eval)
 }
 
 func (s *State) init() {
@@ -795,6 +886,9 @@ func (s *State) action() string {
 	return cmdsStr
 }
 
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
+
 type CommandSelector struct {
 	Candidates []*CandidateCommand
 }
@@ -852,6 +946,9 @@ func (this *CommandSelector) best() *CandidateCommand {
 	this.sort()
 	return this.Candidates[0]
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 func myUnitCell(cell rune) bool {
 	return cell == CellMeU || cell == CellMeU2 || cell == CellMeU3
@@ -920,6 +1017,9 @@ func randDirs() []int {
 		return DirULDR
 	}
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 func moveUnits(s *State) {
 	pos := &Position{}
@@ -1208,69 +1308,6 @@ func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 	} //for dir
 }
 
-func (p *Player) isEnemyUnitLevel1(unitCell rune) bool {
-	if p.Id == IdMe {
-		return unitCell == CellOpU
-	}
-	return unitCell == CellMeU
-}
-
-func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
-	if p.Id == IdMe {
-		return unitCell == CellOpU2 || unitCell == CellOpU3
-	}
-	return unitCell == CellMeU2 || unitCell == CellMeU3
-}
-
-func (p *Player) isEnemyBuildingOrProtected(cell rune) bool {
-	if p.Id == IdMe {
-		return cell == CellOpM || cell == CellOpT || cell == CellOpP
-	}
-	return cell == CellMeM || cell == CellMeT || cell == CellMeP
-}
-
-func (p *Player) calculateChainTrainWin() {
-	fmt.Fprintf(os.Stderr, "%s: Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
-	pos := p.MinDistGoal
-	posDist := pos.getIntCell(p.Game.DistGrid)
-	actualCost := 0
-	cmds := &CommandSelector{}
-	//fmt.Fprintf(os.Stderr, "start loop\n")
-	for posDist != 0 {
-		dir := pos.getIntCell(p.Game.DirGrid)
-		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
-		pos = pos.neighbour(dir)
-		posDist = pos.getIntCell(p.Game.DistGrid)
-		cell := pos.getCell(p.State.Grid)
-		unitCell := pos.getCell(p.State.UnitGrid)
-		level := 1
-		if p.isEnemyUnitLevel1(unitCell) {
-			level = 2
-		}
-		if p.isEnemyBuildingOrProtected(cell) || p.isEnemyUnitLevel2or3(unitCell) {
-			level = 3
-		}
-		actualCost += costTrain(level)
-		if p.Id == IdMe {
-			cmds.appendTrain(level, pos, posDist)
-		}
-	}
-	p.ActualChainTrainWinCost = actualCost
-	//fmt.Fprintf(os.Stderr, "end loop\n")
-	if p.Gold < actualCost {
-		fmt.Fprintf(os.Stderr, "%s Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "%s Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-	if p.Id != IdMe {
-		return
-	}
-	for /*i*/ _, cmd := range cmds.Candidates {
-		p.State.addTrain(cmd.To, cmd.Level)
-		//fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-	}
-}
-
 func trainUnits(s *State) {
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
@@ -1397,6 +1434,7 @@ func buildMinesAndTowers(s *State) {
 	if (s.Op.ChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
 		pos := getHqTowerPosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
 			s.addBuildTower(pos)
 		}
 	}
@@ -1421,10 +1459,14 @@ func buildMinesAndTowers(s *State) {
 		s.Me.Gold > CostMine {
 		pos := getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
 			s.addBuildMine(pos)
 		}
 	}
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 func main() {
 	g.TurnTime = time.Now()
@@ -1434,33 +1476,31 @@ func main() {
 		s.init()
 
 		// calculate chain train win cost / check before move
-		s.Me.calculateChainTrainWin()
-		s.Op.calculateChainTrainWin()
-
-		// evaluate positions
-		s.evaluate("INIT")
+		s.Me.calculateChainTrainWin(true)
+		s.Op.calculateChainTrainWin(true)
+		s.evaluate("TURN START")
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
+
+		s.Me.calculateChainTrainWin(true)
+		s.Op.calculateChainTrainWin(true)
+		s.evaluate("AFTER BUILD")
 
 		// 1. look at MOVE commands
 		moveUnits(s)
 
 		// check chain train win after move
-		s.Me.calculateChainTrainWin()
-		s.Op.calculateChainTrainWin()
-
-		// evaluate positions
+		s.Me.calculateChainTrainWin(false)
+		s.Op.calculateChainTrainWin(true)
 		s.evaluate("AFTER MOVE")
 
 		// 2. look at TRAIN commands
 		trainUnits(s)
 
 		// check chain train win after move
-		s.Me.calculateChainTrainWin()
-		s.Op.calculateChainTrainWin()
-
-		// evaluate positions
+		s.Op.calculateChainTrainWin(true)
+		s.Me.calculateChainTrainWin(true)
 		s.evaluate("AFTER TRAIN")
 
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
