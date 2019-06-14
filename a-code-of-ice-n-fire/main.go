@@ -476,15 +476,17 @@ func (p *Player) calculateChainTrainWin(moveFirst bool) {
 	if p.Id != IdMe {
 		return
 	}
-	for /*i*/ _, cmd := range cmds.Candidates {
+	for i, cmd := range cmds.Candidates {
 		p.State.addTrain(cmd.To, cmd.Level)
-		//fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 	}
 }
 
 func (p *Player) evaluate() {
-	p.RoundsToHqCapture = 1000.0
-	if p.income() > 0 {
+	p.RoundsToHqCapture = 100.0
+	if p.ActualChainTrainWinCost < p.Gold {
+		p.RoundsToHqCapture = 0.0
+	} else if p.income() > 0 {
 		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.income())
 	}
 
@@ -844,10 +846,12 @@ func (s *State) addBuildTower(at *Position) {
 
 func (s *State) addMove(u *Unit, from *Position, to *Position) {
 	s.Commands = append(s.Commands, &Command{Type: CmdMove, Info: u.Id, X: to.X, Y: to.Y})
-	to.setCell(s.Grid, CellMeA)
-	to.setCell(s.UnitGrid, CellMeU)
-	from.setCell(s.UnitGrid, CellNeutral)
-	s.Me.addActiveArea(to)
+	if !from.sameAs(to) {
+		to.setCell(s.Grid, CellMeA)
+		to.setCell(s.UnitGrid, CellMeU)
+		from.setCell(s.UnitGrid, CellNeutral)
+		s.Me.addActiveArea(to)
+	}
 }
 
 func (s *State) addTrain(at *Position, level int) {
@@ -1314,15 +1318,14 @@ func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Pos
 }
 
 func trainUnits(s *State) {
+	if s.Me.Gold < CostTrain1 {
+		// no gold to train any units
+		return
+	}
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
-
 	for j := 0; j < GridDim; j++ {
 		for i := 0; i < GridDim; i++ {
-			if s.Me.Gold < CostTrain1 {
-				// no gold to train any units
-				return
-			}
 			pos.set(i, j)
 			cell := pos.getCell(s.Grid)
 			if !myActiveCell(cell) {
@@ -1479,6 +1482,8 @@ func buildMinesAndTowers(s *State) {
 func main() {
 	g.TurnTime = time.Now()
 	initGame()
+	var turnEval float64
+	var eval float64
 	for ; ; g.nextTurn() {
 		s := &State{}
 		s.init()
@@ -1487,6 +1492,10 @@ func main() {
 		s.Me.calculateChainTrainWin(true)
 		s.Op.calculateChainTrainWin(true)
 		s.evaluate("TURN START")
+		fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
+		turnEval = s.Eval
+		fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
+		eval = s.Eval
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
@@ -1494,6 +1503,8 @@ func main() {
 		s.Me.calculateChainTrainWin(true)
 		s.Op.calculateChainTrainWin(true)
 		s.evaluate("AFTER BUILD")
+		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s.Eval-eval)
+		eval = s.Eval
 
 		// 1. look at MOVE commands
 		moveUnits(s)
@@ -1502,6 +1513,8 @@ func main() {
 		s.Me.calculateChainTrainWin(false)
 		s.Op.calculateChainTrainWin(true)
 		s.evaluate("AFTER MOVE")
+		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
+		eval = s.Eval
 
 		// 2. look at TRAIN commands
 		trainUnits(s)
@@ -1510,6 +1523,8 @@ func main() {
 		s.Op.calculateChainTrainWin(true)
 		s.Me.calculateChainTrainWin(true)
 		s.evaluate("AFTER TRAIN")
+		fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
+		eval = s.Eval
 
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
