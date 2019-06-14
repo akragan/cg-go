@@ -23,7 +23,8 @@ const (
 	Min1             = 3
 	//Min2      = 2
 
-	RandomDirsAtInitDistGrid = false
+	RandomDirsAtInitDistGrid        = false
+	AbortTrainCmdsOnNegativeEvalChg = true
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
@@ -35,6 +36,7 @@ const (
 	IdOp   = 1
 	IdVoid = -1
 
+	CmdAbort      = -1 // to remove Train commands
 	CmdWait       = 0
 	CmdMove       = 1
 	CmdTrain      = 2
@@ -433,7 +435,7 @@ func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
 	return cell == CellMeT || cell == CellMeP
 }
 
-func (p *Player) calculateChainTrainWin(moveFirst bool) {
+func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
 	pos := p.MinDistGoal
 	unitCell := pos.getCell(p.State.UnitGrid)
@@ -458,13 +460,18 @@ func (p *Player) calculateChainTrainWin(moveFirst bool) {
 		}
 		if moveFirst && isFriendlyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
 			// first move free!
-			moveFirst = false
+			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
+			// fix needed: add move command!
+			if execute {
+				cmds.appendTrain(level, pos, posDist)
+			}
 		} else {
 			actualCost += costTrain(level)
+			if execute {
+				cmds.appendTrain(level, pos, posDist)
+			}
 		}
-		if p.Id == IdMe {
-			cmds.appendTrain(level, pos, posDist)
-		}
+		moveFirst = false
 	}
 	p.ActualChainTrainWinCost = actualCost
 	//fmt.Fprintf(os.Stderr, "end loop\n")
@@ -473,12 +480,12 @@ func (p *Player) calculateChainTrainWin(moveFirst bool) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-	if p.Id != IdMe {
+	if !execute {
 		return
 	}
 	for i, cmd := range cmds.Candidates {
 		p.State.addTrain(cmd.To, cmd.Level)
-		fmt.Fprintf(os.Stderr, "%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 	}
 }
 
@@ -875,21 +882,18 @@ func (s *State) addTrain(at *Position, level int) {
 func (s *State) action() string {
 	cmdsStr := ""
 	for i := 0; i < len(s.Commands); i++ {
-		if i > 0 {
-			cmdsStr += ";"
-		}
 		cmd := s.Commands[i]
 		switch cmd.Type {
 		case CmdWait:
 			cmdsStr += "WAIT"
 		case CmdTrain:
-			cmdsStr += fmt.Sprintf("TRAIN %d %d %d", cmd.Info, cmd.X, cmd.Y)
+			cmdsStr += fmt.Sprintf(";TRAIN %d %d %d", cmd.Info, cmd.X, cmd.Y)
 		case CmdMove:
-			cmdsStr += fmt.Sprintf("MOVE %d %d %d", cmd.Info, cmd.X, cmd.Y)
+			cmdsStr += fmt.Sprintf(";MOVE %d %d %d", cmd.Info, cmd.X, cmd.Y)
 		case CmdBuildMine:
-			cmdsStr += fmt.Sprintf("BUILD MINE %d %d", cmd.X, cmd.Y)
+			cmdsStr += fmt.Sprintf(";BUILD MINE %d %d", cmd.X, cmd.Y)
 		case CmdBuildTower:
-			cmdsStr += fmt.Sprintf("BUILD TOWER %d %d", cmd.X, cmd.Y)
+			cmdsStr += fmt.Sprintf(";BUILD TOWER %d %d", cmd.X, cmd.Y)
 		}
 	}
 	cmdsStr += fmt.Sprintf(";MSG Eval:%.1f", s.Eval)
@@ -1492,8 +1496,8 @@ func main() {
 		s.init()
 
 		// calculate chain train win cost / check before move
-		s.Me.calculateChainTrainWin(true)
-		s.Op.calculateChainTrainWin(true)
+		s.Me.calculateChainTrainWin(true, true)
+		s.Op.calculateChainTrainWin(true, false)
 		s.evaluate("TURN START")
 		fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
 		turnEval = s.Eval
@@ -1503,8 +1507,8 @@ func main() {
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
 
-		s.Me.calculateChainTrainWin(true)
-		s.Op.calculateChainTrainWin(true)
+		s.Me.calculateChainTrainWin(true, false)
+		s.Op.calculateChainTrainWin(true, false)
 		s.evaluate("AFTER BUILD")
 		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s.Eval-eval)
 		eval = s.Eval
@@ -1513,8 +1517,8 @@ func main() {
 		moveUnits(s)
 
 		// check chain train win after move
-		s.Me.calculateChainTrainWin(false)
-		s.Op.calculateChainTrainWin(true)
+		s.Me.calculateChainTrainWin(false, true)
+		s.Op.calculateChainTrainWin(true, false)
 		s.evaluate("AFTER MOVE")
 		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
 		eval = s.Eval
@@ -1523,12 +1527,22 @@ func main() {
 		trainUnits(s)
 
 		// check chain train win after train (as of next turn)
-		s.Op.calculateChainTrainWin(true)
-		s.Me.calculateChainTrainWin(true)
+		s.Op.calculateChainTrainWin(true, false)
+		s.Me.calculateChainTrainWin(true, false)
 		s.evaluate("AFTER TRAIN")
 		fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
+		trainEvalChange := s.Eval - eval
 		eval = s.Eval
 
+		if AbortTrainCmdsOnNegativeEvalChg && trainEvalChange < -1.0 {
+			// abort train commands
+			fmt.Fprintf(os.Stderr, "%d: Aborting all TRAIN commands\n", g.Turn)
+			for _, cmd := range s.Commands {
+				if cmd.Type == CmdTrain {
+					cmd.Type = CmdAbort
+				}
+			}
+		}
 		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
 
