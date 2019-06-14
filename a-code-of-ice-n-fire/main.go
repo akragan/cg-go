@@ -106,6 +106,9 @@ var (
 	DirULDR = []int{DirUp, DirLeft, DirDown, DirRight}
 )
 
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
+
 type PositionQueue []*Position
 
 func (s PositionQueue) Put(v *Position) PositionQueue {
@@ -627,9 +630,9 @@ type State struct {
 	NbUnits     int
 	Units       []*Unit
 	UnitGrid    [][]rune
-
+	// my commands to action
 	Commands []*Command
-
+	// state eval
 	MilitaryPowerEval float64
 	HqCaptureEval     float64
 	Eval              float64
@@ -1151,10 +1154,12 @@ func moveUnits(s *State) {
 	}
 }
 
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 // this produces dupe candidate train commands (in the same spots)
 // as cells are neighbours of several other cells
 // needs to be sorted and de-duped before execution
-func trainUnitInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
+func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
 
 	// 1. consider current cell (lowest value)
 	cell := pos.getCell(s.Grid)
@@ -1324,7 +1329,7 @@ func trainUnits(s *State) {
 				// can only train on and next to active area
 				continue
 			}
-			trainUnitInNeighbourhood(candidateCmds, s, pos)
+			candidateTrainCmdsInNeighbourhood(candidateCmds, s, pos)
 		} // for i
 	} // for j
 
@@ -1362,6 +1367,9 @@ func costTrain(level int) int {
 	}
 	return CostTrain1
 }
+
+//---------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------
 
 func getHqTowerPosition() *Position {
 	if g.Me.Hq.X == 0 {
@@ -1498,7 +1506,7 @@ func main() {
 		// 2. look at TRAIN commands
 		trainUnits(s)
 
-		// check chain train win after move
+		// check chain train win after train (as of next turn)
 		s.Op.calculateChainTrainWin(true)
 		s.Me.calculateChainTrainWin(true)
 		s.evaluate("AFTER TRAIN")
