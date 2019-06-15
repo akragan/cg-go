@@ -25,7 +25,7 @@ const (
 
 	RandomDirsAtInitDistGrid        = false
 	AbortTrainCmdsOnNegativeEvalChg = true
-	TrainNegativeEvalPainTolerance  = -50.0
+	TrainNegativeEvalPainTolerance  = -25.0
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
@@ -365,6 +365,7 @@ type Player struct {
 
 	MinUnitDistGoal   int
 	MinDistGoal       *Position
+	MinDistGoalUnit   *Unit
 	ChainTrainWin     bool
 	ChainTrainWinNext bool
 
@@ -448,6 +449,7 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 	for posDist != 0 {
 		dir := pos.getIntCell(p.Game.DirGrid)
 		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
+		fromPos := pos
 		pos = pos.neighbour(dir)
 		posDist = pos.getIntCell(p.Game.DistGrid)
 		cell := pos.getCell(p.State.Grid)
@@ -460,11 +462,11 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 			level = 3
 		}
 		if moveFirst && isFriendlyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
-			// first move free!
+			// first move for free
 			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
-			// fix needed: add move command!
+			// add move command
 			if execute {
-				cmds.appendTrain(level, pos, posDist)
+				cmds.appendMove(p.MinDistGoalUnit, fromPos, pos, posDist)
 			}
 		} else {
 			actualCost += costTrain(level)
@@ -485,8 +487,13 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 		return
 	}
 	for i, cmd := range cmds.Candidates {
-		p.State.addTrain(cmd.To, cmd.Level)
-		fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		if cmd.Level == 0 { //move command
+			p.State.addMove(cmd.Unit, cmd.From, cmd.To)
+			fmt.Fprintf(os.Stderr, "\t%d: value %d, move %d to (%d,%d)\n", i, cmd.Value, cmd.Unit.Id, cmd.To.X, cmd.To.Y)
+		} else {
+			p.State.addTrain(cmd.To, cmd.Level)
+			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		}
 	}
 }
 
@@ -639,6 +646,7 @@ type State struct {
 	Buildings   []*Building
 	NbUnits     int
 	Units       []*Unit
+	UnitById    map[int]*Unit
 	UnitGrid    [][]rune
 	// my commands to action
 	Commands []*Command
@@ -790,10 +798,12 @@ func (s *State) init() {
 
 	fmt.Scan(&s.NbUnits)
 	s.Units = make([]*Unit, s.NbUnits)
+	s.UnitById = make(map[int]*Unit)
 	for i := 0; i < s.NbUnits; i++ {
 		u := &Unit{}
 		fmt.Scan(&u.Owner, &u.Id, &u.Level, &u.X, &u.Y)
 		s.Units[i] = u
+		s.UnitById[u.Id] = u
 		pos.set(u.X, u.Y)
 		if u.Owner == IdMe {
 			if !g.InTouch {
@@ -804,6 +814,9 @@ func (s *State) init() {
 			pos.setDistance(g.Op.Hq)
 			if s.Me.MinUnitDistGoal > pos.Dist {
 				s.Me.MinUnitDistGoal = pos.Dist
+			}
+			if s.Me.MinDistGoal.sameAs(pos) {
+				s.Me.MinDistGoalUnit = u
 			}
 			switch u.Level {
 			case 1:
@@ -818,6 +831,9 @@ func (s *State) init() {
 			pos.setDistance(g.Me.Hq)
 			if s.Op.MinUnitDistGoal > pos.Dist {
 				s.Op.MinUnitDistGoal = pos.Dist
+			}
+			if s.Op.MinDistGoal.sameAs(pos) {
+				s.Op.MinDistGoalUnit = u
 			}
 			switch u.Level {
 			case 1:
