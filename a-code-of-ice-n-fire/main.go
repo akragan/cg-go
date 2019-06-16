@@ -541,10 +541,11 @@ func (this *Player) recalculateActiveArea() {
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
-		cell := pos.getCell(activeCells)
-		if cell != CellNeutral {
+		activeCell := pos.getCell(activeCells)
+		if activeCell != CellNeutral {
 			continue
 		}
+		cell := pos.getCell(this.State.Grid)
 		if this.isMyActiveCell(cell) {
 			activeArea += 1
 			pos.setCell(activeCells, CellMine)
@@ -562,9 +563,11 @@ func (this *Player) recalculateActiveArea() {
 	activeAreaChg := activeArea - this.ActiveArea
 	if activeAreaChg != 0 {
 		fmt.Fprintf(os.Stderr, "%d active area changed by %d (from %d to %d)\n", this.Id, activeAreaChg, this.ActiveArea, activeArea)
-		this.ActiveArea = activeArea
+		//this.ActiveArea = activeArea
 		//TODO update active area
 		//this.updateActive(activeCells)
+	} else {
+		fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
 	}
 }
 
@@ -917,10 +920,14 @@ func (s *State) addBuildTower(at *Position) {
 func (s *State) addMove(u *Unit, from *Position, to *Position) {
 	s.Commands = append(s.Commands, &Command{Type: CmdMove, Info: u.Id, X: to.X, Y: to.Y})
 	if !from.sameAs(to) {
-		to.setCell(s.Grid, CellMeA)
 		to.setCell(s.UnitGrid, CellMeU)
 		from.setCell(s.UnitGrid, CellNeutral)
-		s.Me.addActiveArea(to)
+
+		cell := to.getCell(s.Grid)
+		if !myActiveCell(cell) {
+			to.setCell(s.Grid, CellMeA)
+			s.Me.addActiveArea(to)
+		}
 	}
 }
 
@@ -936,7 +943,11 @@ func (s *State) addTrain(at *Position, level int) {
 		s.Me.Gold -= CostTrain3
 	}
 	s.Me.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
-	s.Me.addActiveArea(at)
+	cell := at.getCell(s.Grid)
+	if !myActiveCell(cell) {
+		at.setCell(s.Grid, CellMeA)
+		s.Me.addActiveArea(at)
+	}
 }
 
 func (s *State) action() string {
@@ -1557,6 +1568,9 @@ func main() {
 		// 1. look at MOVE commands
 		moveUnits(s)
 
+		s.Me.recalculateActiveArea()
+		s.Op.recalculateActiveArea()
+
 		// check chain train win after move
 		s.Me.calculateChainTrainWin(false, true)
 		s.Op.calculateChainTrainWin(true, false)
@@ -1582,6 +1596,9 @@ func main() {
 				if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
 					s.addTrain(cmd.To, cmd.Level)
 					fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+
+					s.Me.recalculateActiveArea()
+					s.Op.recalculateActiveArea()
 
 					// check chain train win after each TRAIN cmd (as of next turn)
 					s.Op.calculateChainTrainWin(true, false)
