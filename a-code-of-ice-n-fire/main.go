@@ -32,8 +32,9 @@ const (
 	AbortTrainCmdsOnNegativeEvalChg = true
 	TrainNegativeEvalPainTolerance  = -25.0
 
-	EvalDiscountRate    = 5.0
-	EvalHqCaptureFactor = 100.0
+	EvalDiscountRate                    = 5.0
+	EvalHqCaptureFactor                 = 100.0
+	EvalExpectedIncomeFactorFromNeutral = 0.25
 
 	//constants
 	GridDim = 12
@@ -352,6 +353,7 @@ type Player struct {
 	Id     int
 	Game   *GamePlayer
 	State  *State
+	Other  *Player
 	Gold   int
 	Income int
 
@@ -411,6 +413,12 @@ func (this *Player) addActiveArea(pos *Position) {
 
 func (this *Player) income() int {
 	return this.ActiveArea + 4*this.NbMines - this.Upkeep
+}
+
+func (this *Player) expectedIncome() int {
+	return this.ActiveArea +
+		int(EvalExpectedIncomeFactorFromNeutral*float32(this.State.Neutral)*(float32(this.NbUnits)/float32(this.State.NbUnits))) +
+		4*this.NbMines - this.Upkeep
 }
 
 func (p *Player) isMyUnit(unitCell rune) bool {
@@ -513,7 +521,7 @@ func (p *Player) evaluate() {
 	if p.ActualChainTrainWinCost < p.Gold {
 		p.RoundsToHqCapture = 0.0
 	} else if p.income() > 0 {
-		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.income())
+		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.expectedIncome())
 	}
 
 	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
@@ -719,10 +727,9 @@ func (s *State) evaluate(label string) {
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	fmt.Fprintf(os.Stderr, "\tdiscount factor=%.2f\n", g.Turn, g.DiscountFactor)
-	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
-	fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
-	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\n", g.Turn, s.Eval)
+	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
+	fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\t(df=%.2f)\n", g.Turn, s.Eval, g.DiscountFactor)
 }
 
 func (s *State) init() {
@@ -739,6 +746,9 @@ func (s *State) init() {
 	s.Op.MinDistGoal = &Position{X: -1, Y: -1, Dist: InfDist}
 	fmt.Scan(&s.Op.Gold)
 	fmt.Scan(&s.Op.Income)
+
+	s.Me.Other = s.Op
+	s.Op.Other = s.Me
 
 	s.Grid = make([][]rune, GridDim)
 	s.UnitGrid = make([][]rune, GridDim)
