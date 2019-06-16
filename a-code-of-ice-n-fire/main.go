@@ -11,7 +11,12 @@ import "math"
 //import "strings"
 
 const (
+	// debug
+	DebugActiveArea = false
+	DebugTrain      = false
+
 	//options
+
 	StandGroundL1 = true
 	StandGroundL2 = true
 
@@ -567,7 +572,9 @@ func (this *Player) recalculateActiveArea() {
 		//TODO update active area
 		//this.updateActive(activeCells)
 	} else {
-		fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
+		if DebugActiveArea {
+			fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
+		}
 	}
 }
 
@@ -712,9 +719,9 @@ func (s *State) evaluate(label string) {
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	fmt.Fprintf(os.Stderr, "%d: discount factor=%.2f\n", g.Turn, g.DiscountFactor)
-	fmt.Fprintf(os.Stderr, "%d: HQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
-	fmt.Fprintf(os.Stderr, "%d: military eval=%.1f\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	fmt.Fprintf(os.Stderr, "\tdiscount factor=%.2f\n", g.Turn, g.DiscountFactor)
+	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", g.Turn, s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
+	fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", g.Turn, s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
 	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\n", g.Turn, s.Eval)
 }
 
@@ -1615,10 +1622,10 @@ func main() {
 						break
 					}
 				} else {
-					if i < 10 {
+					if DebugTrain && i < 10 {
 						fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 					} else {
-						fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-10)
+						fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-i)
 						break
 					}
 				}
