@@ -176,7 +176,6 @@ func (this *Position) set(x int, y int) *Position {
 }
 
 func (this *Position) sameAs(other *Position) bool {
-
 	return this.X == other.X && this.Y == other.Y
 }
 
@@ -409,7 +408,7 @@ func (this *Player) income() int {
 	return this.ActiveArea + 4*this.NbMines - this.Upkeep
 }
 
-func (p *Player) isFriendlyUnit(unitCell rune) bool {
+func (p *Player) isMyUnit(unitCell rune) bool {
 	if p.Id == IdMe {
 		return myUnitCell(unitCell)
 	}
@@ -430,6 +429,13 @@ func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
 	return unitCell == CellMeU2 || unitCell == CellMeU3
 }
 
+func (p *Player) isMyActiveCell(cell rune) bool {
+	if p.Id == IdMe {
+		return myActiveCell(cell)
+	}
+	return opActiveCell(cell)
+}
+
 func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpT || cell == CellOpP
@@ -441,7 +447,7 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
 	pos := p.MinDistGoal
 	unitCell := pos.getCell(p.State.UnitGrid)
-	isFriendlyUnit := p.isFriendlyUnit(unitCell)
+	isMyUnit := p.isMyUnit(unitCell)
 	posDist := pos.getIntCell(p.Game.DistGrid)
 	actualCost := 0
 	cmds := &CommandSelector{}
@@ -461,7 +467,7 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 		if p.isEnemyTowerOrProtected(cell) || p.isEnemyUnitLevel2or3(unitCell) {
 			level = 3
 		}
-		if moveFirst && isFriendlyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
+		if moveFirst && isMyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
 			// first move for free
 			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
 			// add move command
@@ -523,6 +529,43 @@ type GamePlayer struct {
 	DistGrid    [][]int
 	DirGrid     [][]int
 	Initialized bool
+}
+
+func (this *Player) recalculateActiveArea() {
+	activeCells := make([][]rune, GridDim)
+	for i := 0; i < GridDim; i++ {
+		activeCells[i] = []rune(RowNeutral)
+	}
+	activeArea := 0
+	pos := &Position{X: this.Game.Other.Hq.X, Y: this.Game.Other.Hq.Y, Dist: 0}
+	todo := PositionQueue{pos}
+	for !todo.IsEmpty() {
+		todo, pos = todo.TakeFirst()
+		cell := pos.getCell(activeCells)
+		if cell != CellNeutral {
+			continue
+		}
+		if this.isMyActiveCell(cell) {
+			activeArea += 1
+			pos.setCell(activeCells, CellMine)
+		} else {
+			pos.setCell(activeCells, CellVoid)
+		}
+		dirs := DirDRUL
+		for _, dir := range dirs {
+			nbrPos := pos.neighbour(dir)
+			if nbrPos != nil && nbrPos.getCell(activeCells) == CellNeutral {
+				todo = todo.Put(nbrPos)
+			} // if not visited
+		} // for all dirs
+	}
+	activeAreaChg := activeArea - this.ActiveArea
+	if activeAreaChg != 0 {
+		fmt.Fprintf(os.Stderr, "%d active area changed by %d (from %d to %d)\n", this.Id, activeAreaChg, this.ActiveArea, activeArea)
+		this.ActiveArea = activeArea
+		//TODO update active area
+		//this.updateActive(activeCells)
+	}
 }
 
 func (this *GamePlayer) initDistGrid(grid [][]rune) {
