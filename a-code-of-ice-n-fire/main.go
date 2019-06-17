@@ -416,8 +416,9 @@ func (this *Player) income() int {
 }
 
 func (this *Player) expectedIncome() int {
+	pctUnits := float64(this.NbUnits+1) / float64(this.State.NbUnits+2)
 	return this.ActiveArea +
-		int(EvalExpectedIncomeFactorFromNeutral*float32(this.State.Neutral)*(float32(this.NbUnits)/float32(this.State.NbUnits))) +
+		int(EvalExpectedIncomeFactorFromNeutral*pctUnits*float64(this.State.Neutral)) +
 		4*this.NbMines - this.Upkeep
 }
 
@@ -727,7 +728,8 @@ func (s *State) evaluate(label string) {
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f\n", s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture)
+	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f MeIncome=%d->%d OpIncome=%d->%d\n",
+		s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture, s.Me.income(), s.Me.expectedIncome(), s.Op.income(), s.Op.expectedIncome())
 	fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
 	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\t(df=%.2f)\n", g.Turn, s.Eval, g.DiscountFactor)
 }
@@ -1543,7 +1545,8 @@ func buildMinesAndTowers(s *State) {
 	if s.Me.NbUnits >= Min1 &&
 		s.Op.income() > s.Me.income() &&
 		s.Me.NbMines == 0 &&
-		s.Me.Gold > CostMine {
+		s.Me.Gold > CostMine &&
+		s.NeutralPct < 0.2 {
 		pos := getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
@@ -1599,21 +1602,20 @@ func main() {
 		candidateCmds := trainUnits(s)
 
 		if candidateCmds == nil {
-			fmt.Fprintf(os.Stderr, "No TRAIN candidates\n")
+			fmt.Fprintf(os.Stderr, "%d: No TRAIN candidates\n", g.Turn)
 
 		} else {
-			fmt.Fprintf(os.Stderr, "Train candidates:%d\n", len(candidateCmds.Candidates))
+			fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
 			for i, cmd := range candidateCmds.Candidates {
 				if cmd.Level == 0 {
 					//de-duped
 					continue
 				}
 				cost := costTrain(cmd.Level)
-				//fmt.Fprintf(os.Stderr, "%d: income %d, upkeep %d\n", i, s.Me.income(), s.Me.Upkeep)
-				if cost < s.Me.Gold && s.Me.income() > s.Me.Upkeep {
+				fmt.Fprintf(os.Stderr, "\t%d: TRAIN candidate: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+				fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
+				if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
 					s.addTrain(cmd.To, cmd.Level)
-					fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-
 					s.Me.recalculateActiveArea()
 					s.Op.recalculateActiveArea()
 
@@ -1635,7 +1637,7 @@ func main() {
 					if DebugTrain && i < 10 {
 						fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 					} else {
-						fmt.Fprintf(os.Stderr, "\tSkipping %d more...\n", len(candidateCmds.Candidates)-i)
+						fmt.Fprintf(os.Stderr, "\tSkipping %d candidates...\n", len(candidateCmds.Candidates)-i)
 						break
 					}
 				}
