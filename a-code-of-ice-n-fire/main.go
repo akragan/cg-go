@@ -497,12 +497,13 @@ func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
 	return cell == CellMeT || cell == CellMeP
 }
 
-func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) {
-	s.Me.calculateChainTrainWin(moveFirst, execute)
+func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
+	won := s.Me.calculateChainTrainWin(moveFirst, execute)
 	s.Op.calculateChainTrainWin(true, false)
+	return won
 }
 
-func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
+func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) bool {
 	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
 	pos := p.MinDistGoal
 	unitCell := pos.getCell(p.State.UnitGrid)
@@ -545,11 +546,11 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 	//fmt.Fprintf(os.Stderr, "end loop\n")
 	if p.Gold < actualCost {
 		fmt.Fprintf(os.Stderr, "\t[%s] Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-		return
+		return false
 	}
 	fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
 	if !execute {
-		return
+		return false
 	}
 	for i, cmd := range cmds.Candidates {
 		if cmd.Level == 0 { //move command
@@ -560,6 +561,7 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		}
 	}
+	return true
 }
 
 func (p *Player) evaluate() {
@@ -1468,10 +1470,10 @@ func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Pos
 	} //for dir
 }
 
-func trainUnits(s *State) *CommandSelector {
+func trainUnits(s *State, eval float64) {
 	if s.Me.Gold < CostTrain1 {
 		// no gold to train any units
-		return nil
+		return
 	}
 	pos := &Position{}
 	candidateCmds := &CommandSelector{}
@@ -1490,7 +1492,46 @@ func trainUnits(s *State) *CommandSelector {
 	// sort, dedupe and execute
 	candidateCmds.sort()
 	candidateCmds.dedupe()
-	return candidateCmds
+
+	if candidateCmds == nil {
+		fmt.Fprintf(os.Stderr, "%d: No TRAIN candidates\n", g.Turn)
+
+	} else {
+		fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
+		for i, cmd := range candidateCmds.Candidates {
+			if cmd.Level == 0 {
+				//de-duped
+				continue
+			}
+			cost := costTrain(cmd.Level)
+			fmt.Fprintf(os.Stderr, "\t%d: TRAIN candidate: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
+			if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
+				s.addTrain(cmd.To, cmd.Level)
+				// evaluate after each TRAIN cmd
+				s.calculateActiveAreas()
+				s.calculateChainTrainWins(true, false)
+				s.evaluate("AFTER TRAIN")
+				fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
+				trainEvalChange := s.Eval - eval
+				eval = s.Eval
+
+				if AbortTrainCmdsOnNegativeEvalChg && trainEvalChange < TrainNegativeEvalPainTolerance {
+					// abort train commands
+					fmt.Fprintf(os.Stderr, "%d: Aborting last TRAIN command\n", g.Turn)
+					s.Commands[len(s.Commands)-1].Type = CmdAbort
+					break
+				}
+			} else {
+				if DebugTrain && i < 10 {
+					fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+				} else {
+					fmt.Fprintf(os.Stderr, "\tSkipping %d candidates...\n", len(candidateCmds.Candidates)-i)
+					break
+				}
+			}
+		}
+	}
 }
 
 func costTrain(level int) int {
@@ -1623,73 +1664,36 @@ func main() {
 		g.RespTime = time.Now()
 
 		// evaluate on new turn before any commands
-		s.calculateChainTrainWins(true, true)
-		s.evaluate("TURN START")
-		fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
-		turnEval = s.Eval
-		fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
-		eval = s.Eval
+		won := s.calculateChainTrainWins(true, true)
+		if !won {
+			s.evaluate("TURN START")
+			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
+			turnEval = s.Eval
+			fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
+			eval = s.Eval
 
-		// 0. look for BUILD MINE and/or TOWER commands
-		buildMinesAndTowers(s)
-		// evaluate after BUILD cmds - no change to active areas
-		s.calculateChainTrainWins(true, false)
-		s.evaluate("AFTER BUILD")
-		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s.Eval-eval)
-		eval = s.Eval
+			// 0. look for BUILD MINE and/or TOWER commands
+			buildMinesAndTowers(s)
+			// evaluate after BUILD cmds - no change to active areas
+			s.calculateChainTrainWins(true, false)
+			s.evaluate("AFTER BUILD")
+			fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s.Eval-eval)
+			eval = s.Eval
 
-		// 1. look at MOVE commands
-		moveUnits(s)
-		// evaluate after move cmds
-		s.calculateActiveAreas()
-		s.calculateChainTrainWins(false, true)
-		s.evaluate("AFTER MOVE")
-		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
-		eval = s.Eval
+			// 1. look at MOVE commands
+			moveUnits(s)
+			// evaluate after move cmds
+			s.calculateActiveAreas()
+			won = s.calculateChainTrainWins(false, true)
+			if !won {
+				s.evaluate("AFTER MOVE")
+				fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
+				eval = s.Eval
 
-		// 2. look at TRAIN commands
-		candidateCmds := trainUnits(s)
-
-		if candidateCmds == nil {
-			fmt.Fprintf(os.Stderr, "%d: No TRAIN candidates\n", g.Turn)
-
-		} else {
-			fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
-			for i, cmd := range candidateCmds.Candidates {
-				if cmd.Level == 0 {
-					//de-duped
-					continue
-				}
-				cost := costTrain(cmd.Level)
-				fmt.Fprintf(os.Stderr, "\t%d: TRAIN candidate: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-				fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
-				if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
-					s.addTrain(cmd.To, cmd.Level)
-					// evaluate after each TRAIN cmd
-					s.calculateActiveAreas()
-					s.calculateChainTrainWins(true, false)
-					s.evaluate("AFTER TRAIN")
-					fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
-					trainEvalChange := s.Eval - eval
-					eval = s.Eval
-
-					if AbortTrainCmdsOnNegativeEvalChg && trainEvalChange < TrainNegativeEvalPainTolerance {
-						// abort train commands
-						fmt.Fprintf(os.Stderr, "%d: Aborting last TRAIN command\n", g.Turn)
-						s.Commands[len(s.Commands)-1].Type = CmdAbort
-						break
-					}
-				} else {
-					if DebugTrain && i < 10 {
-						fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-					} else {
-						fmt.Fprintf(os.Stderr, "\tSkipping %d candidates...\n", len(candidateCmds.Candidates)-i)
-						break
-					}
-				}
+				// 2. look at TRAIN commands
+				trainUnits(s, eval)
 			}
 		}
-		// fmt.Fprintln(os.Stderr, "Debug messages...")
 		fmt.Println(s.action()) // Write action to stdout
 
 		fmt.Fprintf(os.Stderr, "Turn %d. elapsed: %v, response: %v\n", g.Turn, time.Since(g.TurnTime), time.Since(g.RespTime))
