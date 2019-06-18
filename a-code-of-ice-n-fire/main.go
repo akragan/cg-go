@@ -375,9 +375,8 @@ type Player struct {
 	NbUnits2 int
 	NbUnits3 int
 
-	NbMines   int
-	NbTowers  int
-	MineSpots []*Position
+	NbMines  int
+	NbTowers int
 
 	ActiveArea int
 	Upkeep     int
@@ -578,6 +577,7 @@ func (p *Player) evaluate() {
 //---------------------------------------------------------------------------------------
 
 type GamePlayer struct {
+	Id          int
 	Name        string
 	Hq          *Position
 	Other       *GamePlayer
@@ -716,11 +716,11 @@ func initGame() {
 	g.Mines = make([]*Position, g.NbMines)
 	g.MineGrid = make([][]rune, GridDim)
 
-	g.Me = &GamePlayer{Name: "Me", Initialized: false}
+	g.Me = &GamePlayer{Id: IdMe, Name: "Me", Initialized: false}
 	g.Me.DistGrid = make([][]int, GridDim)
 	g.Me.DirGrid = make([][]int, GridDim)
 
-	g.Op = &GamePlayer{Name: "Op", Initialized: false}
+	g.Op = &GamePlayer{Id: IdOp, Name: "Op", Initialized: false}
 	g.Op.DistGrid = make([][]int, GridDim)
 	g.Op.DirGrid = make([][]int, GridDim)
 
