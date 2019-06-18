@@ -421,7 +421,35 @@ func (this *Player) addActiveArea(pos *Position) {
 	if dist < this.MinDistGoal.Dist {
 		this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
 	}
+}
 
+func (this *Player) addTower(bPos *Position) {
+	s := this.State
+	if this.Id == IdMe {
+		bPos.setCell(s.Grid, CellMeT)
+		// set Me tower-protected cells
+		for _, dir := range DirDRUL {
+			nbrPos := bPos.neighbour(dir)
+			if nbrPos != nil {
+				nbrCell := nbrPos.getCell(s.Grid)
+				if nbrCell == CellMeA || nbrCell == CellMeM || nbrCell == CellMeH {
+					nbrPos.setCell(s.Grid, CellMeP)
+				}
+			}
+		} //end for
+	} else {
+		bPos.setCell(s.Grid, CellOpT)
+		// set Op tower-protected cells
+		for _, dir := range DirDRUL {
+			nbrPos := bPos.neighbour(dir)
+			if nbrPos != nil {
+				nbrCell := nbrPos.getCell(s.Grid)
+				if nbrCell == CellOpA || nbrCell == CellOpM || nbrCell == CellOpH {
+					nbrPos.setCell(s.Grid, CellOpP)
+				}
+			}
+		} // end for
+	} //end if
 }
 
 func (this *Player) income() int {
@@ -558,13 +586,18 @@ type GamePlayer struct {
 	Initialized bool
 }
 
+func (s *State) recalculateActiveAreas() {
+	s.Me.recalculateActiveArea()
+	s.Op.recalculateActiveArea()
+}
+
 func (this *Player) recalculateActiveArea() {
 	activeCells := make([][]rune, GridDim)
 	for i := 0; i < GridDim; i++ {
 		activeCells[i] = []rune(RowNeutral)
 	}
 	activeArea := 0
-	pos := &Position{X: this.Game.Other.Hq.X, Y: this.Game.Other.Hq.Y, Dist: 0}
+	pos := &Position{X: this.Game.Hq.X, Y: this.Game.Hq.Y, Dist: 0}
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
@@ -576,13 +609,16 @@ func (this *Player) recalculateActiveArea() {
 		if this.isMyActiveCell(cell) {
 			activeArea += 1
 			pos.setCell(activeCells, CellMine)
+			if DebugActiveArea {
+				fmt.Fprintf(os.Stderr, "\t%d: %d active cells (%d,%d)\n", this.Id, activeArea, pos.X, pos.Y)
+			}
 		} else {
 			pos.setCell(activeCells, CellVoid)
 		}
 		dirs := DirDRUL
 		for _, dir := range dirs {
 			nbrPos := pos.neighbour(dir)
-			if nbrPos != nil && nbrPos.getCell(activeCells) == CellNeutral {
+			if nbrPos != nil && this.isMyActiveCell(nbrPos.getCell(this.State.Grid)) {
 				todo = todo.Put(nbrPos)
 			} // if not visited
 		} // for all dirs
@@ -593,10 +629,8 @@ func (this *Player) recalculateActiveArea() {
 		//this.ActiveArea = activeArea
 		//TODO update active area
 		//this.updateActive(activeCells)
-	} else {
-		if DebugActiveArea {
-			fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
-		}
+	} else if DebugActiveArea {
+		fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
 	}
 }
 
@@ -811,6 +845,11 @@ func (s *State) init() {
 		fmt.Scan(&b.Owner, &b.Type, &b.X, &b.Y)
 		s.Buildings[i] = &b
 		bPos := b.Pos()
+		bOwner := s.Me
+		if b.Owner == IdOp {
+			bOwner = s.Op
+		}
+
 		switch b.Type {
 		case TypeHq:
 			if b.Owner == IdMe {
@@ -842,7 +881,7 @@ func (s *State) init() {
 			if b.Owner == IdMe {
 				// tower cell active or protected by another tower
 				if cell == CellMeA || cell == CellMeP {
-					bPos.setCell(s.Grid, CellMeT)
+					bOwner.addTower(bPos)
 				} else {
 					bPos.setCell(s.Grid, CellMeNT)
 				}
@@ -850,17 +889,7 @@ func (s *State) init() {
 			} else {
 				// tower cell active or protected by another tower
 				if cell == CellOpA || cell == CellOpP {
-					bPos.setCell(s.Grid, CellOpT)
-					// set Op tower-protected cells
-					for _, dir := range DirDRUL {
-						nbrPos := bPos.neighbour(dir)
-						if nbrPos != nil {
-							nbrCell := nbrPos.getCell(s.Grid)
-							if nbrCell == CellOpA || nbrCell == CellOpM || nbrCell == CellOpH {
-								nbrPos.setCell(s.Grid, CellOpP)
-							}
-						}
-					}
+					bOwner.addTower(bPos)
 				} else {
 					bPos.setCell(s.Grid, CellOpNT)
 				}
@@ -956,7 +985,7 @@ func (s *State) addBuildMine(at *Position) {
 
 func (s *State) addBuildTower(at *Position) {
 	s.Commands = append(s.Commands, &Command{Type: CmdBuildTower, X: at.X, Y: at.Y})
-	at.setCell(s.Grid, CellMeT)
+	s.Me.addTower(at)
 	s.Me.Gold -= CostTower
 	s.Me.NbTowers += 1
 }
@@ -1614,9 +1643,7 @@ func main() {
 
 		// 1. look at MOVE commands
 		moveUnits(s)
-
-		s.Me.recalculateActiveArea()
-		s.Op.recalculateActiveArea()
+		s.recalculateActiveAreas()
 
 		// check chain train win after move
 		s.Me.calculateChainTrainWin(false, true)
@@ -1643,8 +1670,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
 				if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
 					s.addTrain(cmd.To, cmd.Level)
-					s.Me.recalculateActiveArea()
-					s.Op.recalculateActiveArea()
+					s.recalculateActiveAreas()
 
 					// check chain train win after each TRAIN cmd (as of next turn)
 					s.Op.calculateChainTrainWin(true, false)
