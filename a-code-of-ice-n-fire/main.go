@@ -28,6 +28,7 @@ const (
 	Min1             = 3
 	//Min2      = 2
 
+	MoveBackwards                   = false
 	RandomDirsAtInitDistGrid        = false
 	AbortTrainCmdsOnNegativeEvalChg = true
 	TrainNegativeEvalPainTolerance  = -25.0
@@ -212,6 +213,17 @@ func (this *Position) onEdge(grid [][]rune) bool {
 	return false
 }
 
+func (this *Position) freedom(grid [][]rune) int {
+	f := 4
+	for _, dir := range DirDRUL {
+		nbrPos := this.neighbour(dir)
+		if nbrPos == nil || nbrPos.getCell(grid) == CellVoid {
+			f -= 1
+		}
+	}
+	return f
+}
+
 func (this *Position) findNeighbour(grid [][]rune, cell rune) int {
 	for _, dir := range DirDRUL {
 		nbrPos := this.neighbour(dir)
@@ -324,11 +336,12 @@ func (this *Building) Pos() *Position {
 }
 
 type Unit struct {
-	Id    int
-	X     int
-	Y     int
-	Owner int
-	Level int
+	Id      int
+	X       int
+	Y       int
+	Owner   int
+	Level   int
+	Freedom int
 }
 
 func (this *Unit) Pos() *Position {
@@ -876,6 +889,7 @@ func (s *State) init() {
 					g.InTouch = true
 				}
 			}
+			u.Freedom = pos.freedom(s.Grid)
 			pos.setDistance(g.Op.Hq)
 			if s.Me.MinUnitDistGoal > pos.Dist {
 				s.Me.MinUnitDistGoal = pos.Dist
@@ -913,10 +927,21 @@ func (s *State) init() {
 	}
 	// sort units from l1 to l3 (l1 will move first)
 	// the idea being for them to be moving into enemy's camp first)
+	// then by freedom - units less free should move first
 	if SortUnitsAsc {
-		sort.Slice(s.Units, func(i, j int) bool { return s.Units[i].Level < s.Units[j].Level })
+		sort.Slice(s.Units, func(i, j int) bool {
+			if s.Units[i].Level == s.Units[j].Level {
+				return s.Units[i].Freedom < s.Units[j].Freedom
+			}
+			return s.Units[i].Level < s.Units[j].Level
+		})
 	} else if SortUnitsDesc {
-		sort.Slice(s.Units, func(i, j int) bool { return s.Units[i].Level > s.Units[j].Level })
+		sort.Slice(s.Units, func(i, j int) bool {
+			if s.Units[i].Level == s.Units[j].Level {
+				return s.Units[i].Freedom < s.Units[j].Freedom
+			}
+			return s.Units[i].Level > s.Units[j].Level
+		})
 	}
 	g.RespTime = time.Now()
 	s.Commands = []*Command{&Command{Type: CmdWait}}
@@ -1237,13 +1262,15 @@ func moveUnits(s *State) {
 				continue
 			}
 
-			// moving to another free cell (by any unit)
+			// just moving to another free cell (by any unit)
 			// value depends on whether we're getting closer or further from Op Hq
 			// 1 if closer, 0 if same, -1 if further
 			if nbrCell == CellMeA && !myUnitCell(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
-				candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
+				if currDist-nbrDist >= 0 || MoveBackwards {
+					candidateCmds.appendMove(u, pos, nbrPos, currDist-nbrDist)
+				}
 				continue
 			}
 		} //for dir
