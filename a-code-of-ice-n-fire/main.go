@@ -364,11 +364,11 @@ func (this *Command) Pos() *Position {
 
 type Player struct {
 	Id     int
+	Gold   int
+	Income int
 	Game   *GamePlayer
 	State  *State
 	Other  *Player
-	Gold   int
-	Income int
 
 	NbUnits  int
 	NbUnits1 int
@@ -381,9 +381,9 @@ type Player struct {
 	ActiveArea int
 	Upkeep     int
 
-	MinUnitDistGoal   int
-	MinDistGoal       *Position
-	MinDistGoalUnit   *Unit
+	MinUnitDistGoal   int       // distance to goal from the closest unit
+	MinDistGoal       *Position // distance to goal from the closest active cell
+	MinDistGoalUnit   *Unit     // reference to unit if present on the closest active cell
 	ChainTrainWin     bool
 	ChainTrainWinNext bool
 
@@ -566,7 +566,7 @@ func (p *Player) evaluate() {
 	p.RoundsToHqCapture = 100.0
 	if p.ActualChainTrainWinCost < p.Gold {
 		p.RoundsToHqCapture = 0.0
-	} else if p.income() > 0 {
+	} else if p.expectedIncome() > 0 {
 		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.expectedIncome())
 	}
 
@@ -762,12 +762,12 @@ type State struct {
 	Units       []*Unit
 	UnitById    map[int]*Unit
 	UnitGrid    [][]rune
-	// my commands to action
-	Commands []*Command
 	// state eval
 	MilitaryPowerEval float64
 	HqCaptureEval     float64
 	Eval              float64
+	// my commands to action
+	Commands []*Command
 }
 
 func (s *State) evaluate(label string) {
@@ -830,18 +830,12 @@ func (s *State) init() {
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
 	s.Me.MinChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
 	s.Me.ActualChainTrainWinCost = s.Me.MinChainTrainWinCost
-	s.Me.ChainTrainWin = s.Me.Gold >= s.Me.MinDistGoal.Dist*CostTrain1
-	s.Me.ChainTrainWinNext = s.Me.Gold+s.Me.income() >= (s.Me.MinDistGoal.Dist-1)*CostTrain1
 	s.Op.MinChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
 	s.Op.ActualChainTrainWinCost = s.Op.MinChainTrainWinCost
-	s.Op.ChainTrainWin = s.Op.Gold >= s.Op.MinDistGoal.Dist*CostTrain1
-	s.Op.ChainTrainWinNext = s.Op.Gold+s.Op.income() >= (s.Op.MinDistGoal.Dist-1)*CostTrain1
 
 	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
-	fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
-	fmt.Fprintf(os.Stderr, "%d: Me.ChainTrainWin:%v Next:%v Gold:%d TrainChainCost=%d\n", g.Turn, s.Me.ChainTrainWin, s.Me.ChainTrainWinNext, s.Me.Gold, s.Me.MinDistGoal.Dist*CostTrain1)
-	fmt.Fprintf(os.Stderr, "%d: Op.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y, s.Op.MinDistGoal.Dist)
-	fmt.Fprintf(os.Stderr, "%d: Op.ChainTrainWin:%v Next:%v Gold:%d TrainChainCost=%d\n", g.Turn, s.Op.ChainTrainWin, s.Op.ChainTrainWinNext, s.Op.Gold, s.Op.MinDistGoal.Dist*CostTrain1)
+	//fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
+	//fmt.Fprintf(os.Stderr, "%d: Op.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y, s.Op.MinDistGoal.Dist)
 
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
