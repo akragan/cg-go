@@ -497,6 +497,11 @@ func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
 	return cell == CellMeT || cell == CellMeP
 }
 
+func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) {
+	s.Me.calculateChainTrainWin(moveFirst, execute)
+	s.Op.calculateChainTrainWin(true, false)
+}
+
 func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) {
 	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
 	pos := p.MinDistGoal
@@ -972,7 +977,6 @@ func (s *State) init() {
 			return s.Units[i].Level > s.Units[j].Level
 		})
 	}
-	g.RespTime = time.Now()
 	s.Commands = []*Command{&Command{Type: CmdWait}}
 }
 
@@ -1622,10 +1626,10 @@ func main() {
 	for ; ; g.nextTurn() {
 		s := &State{}
 		s.init()
+		g.RespTime = time.Now()
 
-		// calculate chain train win cost / check before move
-		s.Me.calculateChainTrainWin(true, true)
-		s.Op.calculateChainTrainWin(true, false)
+		// evaluate on new turn before any commands
+		s.calculateChainTrainWins(true, true)
 		s.evaluate("TURN START")
 		fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
 		turnEval = s.Eval
@@ -1634,20 +1638,17 @@ func main() {
 
 		// 0. look for BUILD MINE and/or TOWER commands
 		buildMinesAndTowers(s)
-
-		s.Me.calculateChainTrainWin(true, false)
-		s.Op.calculateChainTrainWin(true, false)
+		// evaluate after BUILD cmds - no change to active areas
+		s.calculateChainTrainWins(true, false)
 		s.evaluate("AFTER BUILD")
 		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s.Eval-eval)
 		eval = s.Eval
 
 		// 1. look at MOVE commands
 		moveUnits(s)
+		// evaluate after move cmds
 		s.recalculateActiveAreas()
-
-		// check chain train win after move
-		s.Me.calculateChainTrainWin(false, true)
-		s.Op.calculateChainTrainWin(true, false)
+		s.calculateChainTrainWins(false, true)
 		s.evaluate("AFTER MOVE")
 		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
 		eval = s.Eval
@@ -1670,11 +1671,9 @@ func main() {
 				fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
 				if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
 					s.addTrain(cmd.To, cmd.Level)
+					// evaluate after each TRAIN cmd
 					s.recalculateActiveAreas()
-
-					// check chain train win after each TRAIN cmd (as of next turn)
-					s.Op.calculateChainTrainWin(true, false)
-					s.Me.calculateChainTrainWin(true, false)
+					s.calculateChainTrainWins(true, false)
 					s.evaluate("AFTER TRAIN")
 					fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
 					trainEvalChange := s.Eval - eval
