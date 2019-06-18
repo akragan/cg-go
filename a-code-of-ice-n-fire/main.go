@@ -591,7 +591,7 @@ type GamePlayer struct {
 	Initialized bool
 }
 
-func (s *State) recalculateActiveAreas() {
+func (s *State) calculateActiveAreas() {
 	s.Me.recalculateActiveArea()
 	s.Op.recalculateActiveArea()
 }
@@ -1647,7 +1647,7 @@ func main() {
 		// 1. look at MOVE commands
 		moveUnits(s)
 		// evaluate after move cmds
-		s.recalculateActiveAreas()
+		s.calculateActiveAreas()
 		s.calculateChainTrainWins(false, true)
 		s.evaluate("AFTER MOVE")
 		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
@@ -1672,7 +1672,7 @@ func main() {
 				if cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
 					s.addTrain(cmd.To, cmd.Level)
 					// evaluate after each TRAIN cmd
-					s.recalculateActiveAreas()
+					s.calculateActiveAreas()
 					s.calculateChainTrainWins(true, false)
 					s.evaluate("AFTER TRAIN")
 					fmt.Fprintf(os.Stderr, "%d: TRAIN eval change: %.1f\n", g.Turn, s.Eval-eval)
