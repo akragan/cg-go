@@ -23,7 +23,7 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowersInTouch       = 2
+	MaxTowersInTouch       = 6
 	MaxTowers              = 6
 	MinOpDistToBuildTowers = 11
 
@@ -662,6 +662,20 @@ func (p *Player) isMyEmptyActiveCell(cell rune) bool {
 		return cell == CellMeA
 	}
 	return cell == CellOpA
+}
+
+func (p *Player) isEnemyEmptyActiveCell(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpA
+	}
+	return cell == CellMeA
+}
+
+func (p *Player) isEnemyEmptyInactiveCell(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpNA
+	}
+	return cell == CellMeNA
 }
 
 func (p *Player) isMyActiveCell(cell rune) bool {
@@ -1533,7 +1547,7 @@ func (s *State) moveUnits(owner int) {
 			// Op active land capturing moves (by any unit)
 			// ++ priority for cells splitting Op territory
 			// + priority for cells keeping my territory compact
-			if nbrCell == CellOpA && !anyUnitCell(unitCell) {
+			if p.isEnemyEmptyActiveCell(nbrCell) && !anyUnitCell(unitCell) {
 				if s.Me.isWedge(nbrPos, s.Grid) {
 					candidateCmds.appendMove(u, pos, nbrPos, 11)
 				} else if s.Me.compactFactor(nbrPos, s.Grid) > 1 {
@@ -1545,7 +1559,7 @@ func (s *State) moveUnits(owner int) {
 			}
 			// Op INactive land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
-			if nbrCell == CellOpNA && !myUnitCell(unitCell) {
+			if p.isEnemyEmptyInactiveCell(nbrCell) && !myUnitCell(unitCell) {
 				if s.Me.compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 8)
 				} else {
