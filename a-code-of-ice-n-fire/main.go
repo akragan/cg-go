@@ -23,8 +23,8 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowersInTouch       = 6
-	MaxTowers              = 6
+	MaxTowersInTouch       = 1
+	MaxTowers              = 2
 	MinOpDistToBuildTowers = 11
 
 	Min1 = 3
