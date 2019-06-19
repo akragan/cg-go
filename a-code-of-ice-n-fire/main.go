@@ -23,12 +23,8 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowersInTouch       = 1
-	MaxTowers              = 2
-	MinOpDistToBuildTowers = 11
-
-	Min1 = 3
-	//Min2      = 2
+	MaxTowers = 1
+	Min1      = 3
 
 	MoveBackwards                   = false
 	RandomDirsAtInitDistGrid        = false
@@ -1851,23 +1847,18 @@ func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
 }
 
 func (s *State) buildMinesAndTowers() {
-	// build tower near HQ
-	opChainTrainWinNext := s.Op.MinChainTrainWinCost < s.Op.Gold+s.Op.income()
-	if (opChainTrainWinNext || s.Op.MinUnitDistGoal <= MinOpDistToBuildTowers) && s.Me.Gold > CostTower {
-		pos := g.getHqTowerPosition()
-		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+	if s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
+		// build tower near HQ
+		spot := g.getHqTowerPosition()
+		if spot.getCell(s.Grid) == CellMeA && spot.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
-			s.addBuildTower(pos)
-		}
-	}
-	// build towers on Op ChainTrainWin path
-	if (opChainTrainWinNext || g.InTouch && s.Me.NbTowers < MaxTowersInTouch || s.NeutralPct < 0.2) &&
-		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
-		if spot := s.findTowerSpotBeyondDist2(s.Op.MinDistGoal); spot != nil {
+			s.addBuildTower(spot)
+		} else if spot = s.findTowerSpotBeyondDist2(s.Op.MinDistGoal); spot != nil {
+			// build towers on Op ChainTrainWin path
 			s.addBuildTower(spot)
 		} else {
 			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
-			if spot := s.findTowerSpotBeyondDist1(s.Op.MinDistGoal); spot != nil {
+			if spot = s.findTowerSpotBeyondDist1(s.Op.MinDistGoal); spot != nil {
 				s.addBuildTower(spot)
 			} else {
 				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
@@ -1875,11 +1866,7 @@ func (s *State) buildMinesAndTowers() {
 		}
 	}
 	// build mine near HQ
-	if s.Me.NbUnits >= Min1 &&
-		s.Op.income() > s.Me.income() &&
-		s.Me.NbMines == 0 &&
-		s.Me.Gold > CostMine &&
-		s.NeutralPct < 0.2 {
+	if s.Me.NbMines == 0 && s.Me.Gold > CostMine {
 		pos := g.getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
