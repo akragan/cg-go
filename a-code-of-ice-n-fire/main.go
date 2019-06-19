@@ -601,11 +601,11 @@ func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
 	return unitCell == CellMeU2 || unitCell == CellMeU3
 }
 
-func (p *Player) isEnemyHQ(unitCell rune) bool {
+func (p *Player) isEnemyHQ(cell rune) bool {
 	if p.Id == IdMe {
-		return unitCell == CellOpH
+		return cell == CellOpH
 	}
-	return unitCell == CellMeH
+	return cell == CellMeH
 }
 
 func (p *Player) isEnemyTower(cell rune) bool {
@@ -1499,48 +1499,48 @@ func (s *State) moveUnits(owner int) {
 				continue
 			}
 			// Op HQ capturing moves (by any unit)
-			if nbrCell == CellOpH {
+			if p.isEnemyHQ(nbrCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 20)
 				continue
 			}
 			// Op active TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && nbrCell == CellOpT && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyTower(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 19)
 				continue
 			}
 			// Op TOWER-protected land capturing moves (only by l3 unit)
-			if u.Level == 3 && nbrCell == CellOpP && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyProtected(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 18)
 				continue
 			}
 			// Op inactive TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && nbrCell == CellOpNT && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyInactiveTower(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 17)
 				continue
 			}
 			// Op unit l3 capturing moves (only by l3 unit)
-			if u.Level == 3 && unitCell == CellOpU3 && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyUnitLevel3(unitCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 16)
 				continue
 			}
 			// Op unit l2 capturing moves (only by l3 unit)
-			if u.Level == 3 && unitCell == CellOpU2 && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyUnitLevel2(unitCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 15)
 				continue
 			}
 			// Op active MINE capturing moves (by any unit)
-			if nbrCell == CellOpM && !myUnitCell(unitCell) {
+			if p.isEnemyMine(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 14)
 				continue
 			}
 			// Op unit l1 capturing moves (only by any l2 or l3 unit)
-			if (u.Level == 3 || u.Level == 2) && unitCell == CellOpU && nbrCell != CellOpP && !myUnitCell(unitCell) {
+			if (u.Level == 3 || u.Level == 2) && p.isEnemyUnitLevel1(unitCell) && !p.isEnemyProtected(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 13)
 				//s.addMove(u, pos, nbrPos)
 				continue
 			}
 			// Op INactive MINE capturing moves (by any unit)
-			if nbrCell == CellOpNM && !myUnitCell(unitCell) {
+			if p.isEnemyInactiveMine(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 12)
 				continue
 			}
@@ -1579,8 +1579,8 @@ func (s *State) moveUnits(owner int) {
 			}
 			// standing my ground if faced with uncapturable enemy (lvl 1 and 2)
 			// i.e. issuing invalid move command on purpose
-			if StandGroundL2 && u.Level == 2 && unitCell == CellOpU2 ||
-				StandGroundL1 && u.Level == 1 && unitCell == CellOpU {
+			if StandGroundL2 && u.Level == 2 && p.isEnemyUnitLevel2(unitCell) ||
+				StandGroundL1 && u.Level == 1 && p.isEnemyUnitLevel1(unitCell) {
 				candidateCmds.appendMove(u, pos, pos, 0)
 				continue
 			}
@@ -1588,7 +1588,7 @@ func (s *State) moveUnits(owner int) {
 			// just moving to another free cell (by any unit)
 			// value depends on whether we're getting closer or further from Op Hq
 			// 1 if closer, 0 if same, -1 if further
-			if nbrCell == CellMeA && !myUnitCell(unitCell) {
+			if p.isMyEmptyActiveCell(nbrCell) && !myUnitCell(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
 				if currDist-nbrDist >= 0 || MoveBackwards {
@@ -1648,7 +1648,7 @@ func (s *State) candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, pos *Po
 		nbrUnitCell := nbrPos.getCell(s.UnitGrid)
 		bonus := 0
 		if s.Me.isWedge(nbrPos, s.Grid) {
-			bonus += 2
+			bonus += 3
 		}
 
 		if (nbrCell == CellNeutral || opInactiveCell(nbrCell)) && nbrUnitCell == CellNeutral {
@@ -1770,11 +1770,11 @@ func (s *State) trainUnits(eval float64) *State {
 
 				s2 := s.deepCopy()
 				s2.addTrain(cmd.To, cmd.Level)
-				// evaluate after each TRAIN cmd
+				s2.moveUnits(IdOp)
+				// evaluate after each TRAIN cmd (and opponent move)
 				s2.calculateActiveAreas()
 				s2.calculateChainTrainWins(true, false)
-				//moveUnits(s2, IdOp)
-				s2.evaluate("AFTER TRAIN")
+				s2.evaluate("AFTER TRAIN and opponent move")
 
 				fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
 				if s2.Eval >= eval {
@@ -1910,9 +1910,17 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
 			eval = s.Eval
 
-			// 0. look for BUILD MINE and/or TOWER commands
 			s2 := s.deepCopy()
+			s2.moveUnits(IdOp)
+			s2.calculateChainTrainWins(true, false)
+			s2.evaluate("DO NOTHING scenario")
+			fmt.Fprintf(os.Stderr, "%d: DO NOTHING eval change: %.1f\n", g.Turn, s2.Eval-eval)
+			eval = s2.Eval
+
+			// 0. look for BUILD MINE and/or TOWER commands
+			s2 = s.deepCopy()
 			s2.buildMinesAndTowers()
+			s2.moveUnits(IdOp)
 			// evaluate after BUILD cmds - no change to active areas
 			if len(s2.Commands) > 0 {
 				s2.calculateChainTrainWins(true, false)
@@ -1926,10 +1934,11 @@ func main() {
 				} else {
 					fmt.Fprintf(os.Stderr, "\tskipping BUILD commands\n")
 				}
-				s2 = s.deepCopy()
 			}
 			// 1. look at MOVE commands
+			s2 = s.deepCopy()
 			s2.moveUnits(IdMe)
+			s2.moveUnits(IdOp)
 			// evaluate after move cmds
 			if len(s2.Commands) > 0 {
 				s2.calculateActiveAreas()
