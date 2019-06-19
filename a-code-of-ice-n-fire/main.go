@@ -23,9 +23,11 @@ const (
 	SortUnitsAsc  = true
 	SortUnitsDesc = false // used only if SortUnitsAsc==false
 
-	MaxTowersInTouch = 2
-	MaxTowers        = 6
-	Min1             = 3
+	MaxTowersInTouch       = 2
+	MaxTowers              = 6
+	MinOpDistToBuildTowers = 11
+
+	Min1 = 3
 	//Min2      = 2
 
 	MoveBackwards                   = false
@@ -1456,11 +1458,12 @@ func randDirs() []int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func (s *State) moveUnits() {
+func (s *State) moveUnits(owner int) {
 	pos := &Position{}
+	p := s.player(owner)
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
-		if u.Owner != IdMe || u.Id == -1 { // -1 for newly trained units that cannot move
+		if u.Owner != owner || u.Id == -1 { // -1 for newly trained units that cannot move
 			continue
 		}
 		pos.set(u.X, u.Y)
@@ -1583,7 +1586,7 @@ func (s *State) moveUnits() {
 		// pick the best move for unit
 		if bestCmd := candidateCmds.best(); bestCmd != nil {
 			//fmt.Fprintf(os.Stderr, "Unit:%d, Candidates:%d, Best:%d X:%d Y:%d\n", bestCmd.Unit.Id, len(candidateCmds.Candidates), bestCmd.Value, bestCmd.To.X, bestCmd.To.Y)
-			s.addMove(s.Me, bestCmd.Unit, bestCmd.From, bestCmd.To)
+			s.addMove(p, bestCmd.Unit, bestCmd.From, bestCmd.To)
 		}
 	}
 }
@@ -1869,7 +1872,7 @@ func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
 func (s *State) buildMinesAndTowers() {
 	// build tower near HQ
 	opChainTrainWinNext := s.Op.MinChainTrainWinCost < s.Op.Gold+s.Op.income()
-	if (opChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
+	if (opChainTrainWinNext || s.Op.MinUnitDistGoal <= MinOpDistToBuildTowers) && s.Me.Gold > CostTower {
 		pos := g.getHqTowerPosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
@@ -1945,7 +1948,7 @@ func main() {
 				s2 = s.deepCopy()
 			}
 			// 1. look at MOVE commands
-			s2.moveUnits()
+			s2.moveUnits(IdMe)
 			// evaluate after move cmds
 			if len(s2.Commands) > 0 {
 				s2.calculateActiveAreas()
