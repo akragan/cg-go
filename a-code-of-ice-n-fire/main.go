@@ -892,7 +892,7 @@ func (g *Game) nextTurn() {
 	g.DiscountFactor = math.Exp((float64(g.Turn)/100.0 - 1.0) * EvalDiscountRate)
 }
 
-func initGame() {
+func (g *Game) initGame() {
 	g.Turn = 0
 	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
 
@@ -926,6 +926,34 @@ func initGame() {
 		g.Mines[i] = mine
 		mine.setCell(g.MineGrid, CellMine)
 	}
+}
+
+func (g *Game) getHqTowerPosition() *Position {
+	if g.Me.Hq.X == 0 {
+		// build tower at (1,1)
+		pos := &Position{X: 1, Y: 1}
+		if pos.getCell(g.MineGrid) == CellMine {
+			// if (1,1) is a mine, try (0,1) instead
+			pos = &Position{X: 0, Y: 1}
+		}
+		return pos
+	}
+	// else build tower at (10,10)
+	pos := &Position{X: 10, Y: 10}
+	if pos.getCell(g.MineGrid) == CellMine {
+		// if (10,10) is a mine, try (11,10) instead
+		pos = &Position{X: 11, Y: 10}
+	}
+	return pos
+}
+
+func (g *Game) getHqMinePosition() *Position {
+	if g.Me.Hq.X == 0 {
+		// build mine at (1,0)
+		return &Position{X: 1, Y: 0}
+	}
+	// else build mine at (10,11)
+	return &Position{X: 10, Y: 11}
 }
 
 //---------------------------------------------------------------------------------------
@@ -1428,7 +1456,7 @@ func randDirs() []int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func moveUnits(s *State) {
+func (s *State) moveUnits() {
 	pos := &Position{}
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
@@ -1565,7 +1593,7 @@ func moveUnits(s *State) {
 // this produces dupe candidate train commands (in the same spots)
 // as cells are neighbours of several other cells
 // needs to be sorted and de-duped before execution
-func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Position) {
+func (s *State) candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, pos *Position) {
 
 	// 1. consider current cell (lowest value)
 	cell := pos.getCell(s.Grid)
@@ -1718,7 +1746,7 @@ func candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, s *State, pos *Pos
 	} //for dir
 }
 
-func trainUnits(s *State, eval float64) *State {
+func (s *State) trainUnits(eval float64) *State {
 	if s.Me.Gold < CostTrain1 {
 		// no gold to train any units
 		return s
@@ -1733,7 +1761,7 @@ func trainUnits(s *State, eval float64) *State {
 				// can only train on and next to active area
 				continue
 			}
-			candidateTrainCmdsInNeighbourhood(candidateCmds, s, pos)
+			s.candidateTrainCmdsInNeighbourhood(candidateCmds, pos)
 		} // for i
 	} // for j
 
@@ -1800,35 +1828,7 @@ func costTrain(level int) int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func getHqTowerPosition() *Position {
-	if g.Me.Hq.X == 0 {
-		// build tower at (1,1)
-		pos := &Position{X: 1, Y: 1}
-		if pos.getCell(g.MineGrid) == CellMine {
-			// if (1,1) is a mine, try (0,1) instead
-			pos = &Position{X: 0, Y: 1}
-		}
-		return pos
-	}
-	// else build tower at (10,10)
-	pos := &Position{X: 10, Y: 10}
-	if pos.getCell(g.MineGrid) == CellMine {
-		// if (10,10) is a mine, try (11,10) instead
-		pos = &Position{X: 11, Y: 10}
-	}
-	return pos
-}
-
-func getHqMinePosition() *Position {
-	if g.Me.Hq.X == 0 {
-		// build mine at (1,0)
-		return &Position{X: 1, Y: 0}
-	}
-	// else build mine at (10,11)
-	return &Position{X: 10, Y: 11}
-}
-
-func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
+func (s *State) findTowerSpotBeyondDist2(pos *Position) *Position {
 	for (pos.getCell(s.Grid) != CellMeA ||
 		pos.getCell(s.UnitGrid) != CellNeutral ||
 		pos.getCell(g.MineGrid) == CellMine ||
@@ -1847,7 +1847,7 @@ func findTowerSpotBeyondDist2(s *State, pos *Position) *Position {
 	return nil
 }
 
-func findTowerSpotBeyondDist1(s *State, pos *Position) *Position {
+func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
 	for (pos.getCell(s.Grid) != CellMeA ||
 		pos.getCell(s.UnitGrid) != CellNeutral ||
 		pos.getCell(g.MineGrid) == CellMine ||
@@ -1866,11 +1866,11 @@ func findTowerSpotBeyondDist1(s *State, pos *Position) *Position {
 	return nil
 }
 
-func buildMinesAndTowers(s *State) {
+func (s *State) buildMinesAndTowers() {
 	// build tower near HQ
 	opChainTrainWinNext := s.Op.MinChainTrainWinCost < s.Op.Gold+s.Op.income()
 	if (opChainTrainWinNext || s.Op.MinUnitDistGoal <= 5) && s.Me.Gold > CostTower {
-		pos := getHqTowerPosition()
+		pos := g.getHqTowerPosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
 			s.addBuildTower(pos)
@@ -1879,11 +1879,11 @@ func buildMinesAndTowers(s *State) {
 	// build towers on Op ChainTrainWin path
 	if (opChainTrainWinNext || g.InTouch && s.Me.NbTowers < MaxTowersInTouch || s.NeutralPct < 0.2) &&
 		s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
-		if spot := findTowerSpotBeyondDist2(s, s.Op.MinDistGoal); spot != nil {
+		if spot := s.findTowerSpotBeyondDist2(s.Op.MinDistGoal); spot != nil {
 			s.addBuildTower(spot)
 		} else {
 			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
-			if spot := findTowerSpotBeyondDist1(s, s.Op.MinDistGoal); spot != nil {
+			if spot := s.findTowerSpotBeyondDist1(s.Op.MinDistGoal); spot != nil {
 				s.addBuildTower(spot)
 			} else {
 				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
@@ -1896,7 +1896,7 @@ func buildMinesAndTowers(s *State) {
 		s.Me.NbMines == 0 &&
 		s.Me.Gold > CostMine &&
 		s.NeutralPct < 0.2 {
-		pos := getHqMinePosition()
+		pos := g.getHqMinePosition()
 		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
 			s.addBuildMine(pos)
@@ -1909,7 +1909,7 @@ func buildMinesAndTowers(s *State) {
 
 func main() {
 	g.TurnTime = time.Now()
-	initGame()
+	g.initGame()
 	var turnEval float64
 	var eval float64
 	for ; ; g.nextTurn() {
@@ -1928,7 +1928,7 @@ func main() {
 
 			// 0. look for BUILD MINE and/or TOWER commands
 			s2 := s.deepCopy()
-			buildMinesAndTowers(s2)
+			s2.buildMinesAndTowers()
 			// evaluate after BUILD cmds - no change to active areas
 			if len(s2.Commands) > 0 {
 				s2.calculateChainTrainWins(true, false)
@@ -1945,7 +1945,7 @@ func main() {
 				s2 = s.deepCopy()
 			}
 			// 1. look at MOVE commands
-			moveUnits(s2)
+			s2.moveUnits()
 			// evaluate after move cmds
 			if len(s2.Commands) > 0 {
 				s2.calculateActiveAreas()
@@ -1968,7 +1968,7 @@ func main() {
 					}
 				}
 				// 2. look at TRAIN commands
-				s = trainUnits(s, eval)
+				s = s.trainUnits(eval)
 			}
 		}
 		fmt.Println(s.action()) // Write action to stdout
