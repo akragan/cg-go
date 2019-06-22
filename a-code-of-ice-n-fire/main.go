@@ -72,22 +72,26 @@ const (
 	RowNeutral = "............"
 
 	CellMeA  = 'O' // my active cell
-	CellMeNA = 'o' // my inactive cell
+	CellMeP  = 'P' // my tower-Protected cell
+	CellMeN  = 'o' // my inactive cell
 	CellMeH  = 'H' // my HQ
+	CellMeHP = 'Q' // my tower-Protected HQ
 	CellMeM  = 'M' // my active Mine
-	CellMeNM = 'N' // my iNactive Mine
+	CellMeMP = 'I' // my tower-Protected Mine
+	CellMeMN = 'N' // my iNactive Mine
 	CellMeT  = 'T' // my active Tower
-	CellMeNT = 'F' // my iNactive Tower
-	CellMeP  = 'P' // my Tower-protected cell
+	CellMeTN = 'F' // my iNactive Tower
 
 	CellOpA  = 'X' // op active cell
-	CellOpNA = 'x' // op inactive cell
+	CellOpP  = 'p' // op tower-Protected cell
+	CellOpN  = 'x' // op inactive cell
 	CellOpH  = 'h' // op HQ
+	CellOpHP = 'q' // op tower-Protected HQ
 	CellOpM  = 'm' // op active mine
-	CellOpNM = 'n' // op Not active Mine
+	CellOpMP = 'i' // op tower-Protected mine
+	CellOpMN = 'n' // op iNactive Mine
 	CellOpT  = 't' // op active Tower
-	CellOpNT = 'f' // op iNactive Tower
-	CellOpP  = 'p' // op Tower-protected cell
+	CellOpTN = 'f' // op iNactive Tower
 
 	CellMeU  = 'U' // my unit level 1
 	CellMeU2 = 'K' // my unit level 2
@@ -493,32 +497,44 @@ func (this *Player) addActiveArea(pos *Position) {
 	}
 }
 
-func (this *Player) addTower(bPos *Position) {
+func protect(cell rune) rune {
+	switch cell {
+
+	case CellMeA:
+		return CellMeP
+	case CellMeM:
+		return CellMeMP
+	case CellMeH:
+		return CellMeHP
+
+	case CellOpA:
+		return CellOpP
+	case CellOpM:
+		return CellOpMP
+	case CellOpH:
+		return CellOpHP
+	}
+	return cell
+}
+
+func (s *State) protectNeighbours(pos *Position) {
+	// set tower-protected cells
+	for _, dir := range DirDRUL {
+		nbrPos := pos.neighbour(dir)
+		if nbrPos != nil {
+			nbrPos.setCell(s.Grid, protect(nbrPos.getCell(s.Grid)))
+		}
+	} //end for
+}
+
+func (this *Player) addActiveTower(bPos *Position) {
 	s := this.State
 	if this.Id == IdMe {
 		bPos.setCell(s.Grid, CellMeT)
-		// set Me tower-protected cells
-		for _, dir := range DirDRUL {
-			nbrPos := bPos.neighbour(dir)
-			if nbrPos != nil {
-				nbrCell := nbrPos.getCell(s.Grid)
-				if nbrCell == CellMeA || nbrCell == CellMeM || nbrCell == CellMeH {
-					nbrPos.setCell(s.Grid, CellMeP)
-				}
-			}
-		} //end for
+		s.protectNeighbours(bPos)
 	} else {
 		bPos.setCell(s.Grid, CellOpT)
-		// set Op tower-protected cells
-		for _, dir := range DirDRUL {
-			nbrPos := bPos.neighbour(dir)
-			if nbrPos != nil {
-				nbrCell := nbrPos.getCell(s.Grid)
-				if nbrCell == CellOpA || nbrCell == CellOpM || nbrCell == CellOpH {
-					nbrPos.setCell(s.Grid, CellOpP)
-				}
-			}
-		} // end for
+		s.protectNeighbours(bPos)
 	} //end if
 }
 
@@ -597,11 +613,18 @@ func (p *Player) isEnemyUnitLevel2or3(unitCell rune) bool {
 	return unitCell == CellMeU2 || unitCell == CellMeU3
 }
 
-func (p *Player) isEnemyHQ(cell rune) bool {
+func (p *Player) isEnemyUnprotectedHQ(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpH
 	}
 	return cell == CellMeH
+}
+
+func (p *Player) isEnemyProtectedHQ(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpHP
+	}
+	return cell == CellMeHP
 }
 
 func (p *Player) isEnemyTower(cell rune) bool {
@@ -613,37 +636,44 @@ func (p *Player) isEnemyTower(cell rune) bool {
 
 func (p *Player) isEnemyInactiveTower(cell rune) bool {
 	if p.Id == IdMe {
-		return cell == CellOpNT
+		return cell == CellOpTN
 	}
-	return cell == CellMeNT
+	return cell == CellMeTN
 }
 
-func (p *Player) isEnemyProtected(cell rune) bool {
+func (p *Player) isEnemyProtectedEmpty(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpP
 	}
 	return cell == CellMeP
 }
 
-func (p *Player) isEnemyTowerOrProtected(cell rune) bool {
-	if p.Id == IdMe {
-		return cell == CellOpT || cell == CellOpP
-	}
-	return cell == CellMeT || cell == CellMeP
+func (p *Player) isEnemyProtectedAny(cell rune) bool {
+	return p.isEnemyTower(cell) ||
+		p.isEnemyProtectedEmpty(cell) ||
+		p.isEnemyProtectedMine(cell) ||
+		p.isEnemyProtectedHQ(cell)
 }
 
-func (p *Player) isEnemyMine(cell rune) bool {
+func (p *Player) isEnemyUnprotectedMine(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpM
 	}
 	return cell == CellMeM
 }
 
+func (p *Player) isEnemyProtectedMine(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellOpMP
+	}
+	return cell == CellMeMP
+}
+
 func (p *Player) isEnemyInactiveMine(cell rune) bool {
 	if p.Id == IdMe {
-		return cell == CellOpNM
+		return cell == CellOpMN
 	}
-	return cell == CellMeNM
+	return cell == CellMeMN
 }
 
 func (p *Player) myEmptyActiveCell() rune {
@@ -669,9 +699,9 @@ func (p *Player) isEnemyEmptyActiveCell(cell rune) bool {
 
 func (p *Player) isEnemyEmptyInactiveCell(cell rune) bool {
 	if p.Id == IdMe {
-		return cell == CellOpNA
+		return cell == CellOpN
 	}
-	return cell == CellMeNA
+	return cell == CellMeN
 }
 
 func (p *Player) isMyActiveCell(cell rune) bool {
@@ -715,7 +745,7 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) bool {
 		if p.isEnemyUnitLevel1(unitCell) {
 			level = 2
 		}
-		if p.isEnemyTowerOrProtected(cell) || p.isEnemyUnitLevel2or3(unitCell) {
+		if p.isEnemyProtectedAny(cell) || p.isEnemyInactiveTower(cell) || p.isEnemyUnitLevel2or3(unitCell) {
 			level = 3
 		}
 		if moveFirst && isMyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
@@ -1120,17 +1150,22 @@ func (s *State) init() {
 	//fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
 	//fmt.Fprintf(os.Stderr, "%d: Op.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y, s.Op.MinDistGoal.Dist)
 
+	// load buildings
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
 	for i := 0; i < s.NbBuildings; i++ {
 		b := Building{}
 		fmt.Scan(&b.Owner, &b.Type, &b.X, &b.Y)
 		s.Buildings[i] = &b
+	}
+	// reflect buildings on s.Grid
+	// sort HQ/mines first, towers last - to protect correctly
+	sort.Slice(s.Buildings, func(i, j int) bool { return s.Buildings[j].Type == TypeTower })
+	for i := 0; i < s.NbBuildings; i++ {
+		b := s.Buildings[i]
 		bPos := b.Pos()
-		bOwner := s.Me
-		if b.Owner == IdOp {
-			bOwner = s.Op
-		}
+		bOwner := s.player(b.Owner)
+		cell := bPos.getCell(s.Grid)
 
 		switch b.Type {
 		case TypeHq:
@@ -1143,10 +1178,10 @@ func (s *State) init() {
 			}
 		case TypeMine:
 			if b.Owner == IdMe {
-				if bPos.getCell(s.Grid) == CellMeA {
+				if myActiveCell(cell) {
 					bPos.setCell(s.Grid, CellMeM)
 				} else {
-					bPos.setCell(s.Grid, CellMeNM)
+					bPos.setCell(s.Grid, CellMeMN)
 				}
 				// TODO find out if inactive mines count towards building cost
 				s.Me.NbMines++
@@ -1154,7 +1189,7 @@ func (s *State) init() {
 				if bPos.getCell(s.Grid) == CellOpA {
 					bPos.setCell(s.Grid, CellOpM)
 				} else {
-					bPos.setCell(s.Grid, CellOpNM)
+					bPos.setCell(s.Grid, CellOpMN)
 				}
 				s.Op.NbMines++
 			}
@@ -1162,18 +1197,18 @@ func (s *State) init() {
 			cell := bPos.getCell(s.Grid)
 			if b.Owner == IdMe {
 				// tower cell active or protected by another tower
-				if cell == CellMeA || cell == CellMeP {
-					bOwner.addTower(bPos)
+				if myActiveCell(cell) {
+					bOwner.addActiveTower(bPos)
 				} else {
-					bPos.setCell(s.Grid, CellMeNT)
+					bPos.setCell(s.Grid, CellMeTN)
 				}
 				s.Me.NbTowers++
 			} else {
 				// tower cell active or protected by another tower
-				if cell == CellOpA || cell == CellOpP {
-					bOwner.addTower(bPos)
+				if opActiveCell(cell) {
+					bOwner.addActiveTower(bPos)
 				} else {
-					bPos.setCell(s.Grid, CellOpNT)
+					bPos.setCell(s.Grid, CellOpTN)
 				}
 				s.Op.NbTowers++
 			}
@@ -1264,7 +1299,7 @@ func (s *State) addBuildMine(at *Position) {
 
 func (s *State) addBuildTower(at *Position) {
 	s.Commands = append(s.Commands, &Command{Type: CmdBuildTower, X: at.X, Y: at.Y})
-	s.Me.addTower(at)
+	s.Me.addActiveTower(at)
 	s.Me.Gold -= CostTower
 	s.Me.NbTowers += 1
 }
@@ -1402,19 +1437,35 @@ func anyUnitCell(cell rune) bool {
 }
 
 func myActiveCell(cell rune) bool {
-	return cell == CellMeA || cell == CellMeH || cell == CellMeM || cell == CellMeT || cell == CellMeP
+	return cell == CellMeA ||
+		cell == CellMeP ||
+		cell == CellMeH ||
+		cell == CellMeHP ||
+		cell == CellMeM ||
+		cell == CellMeMP ||
+		cell == CellMeT
 }
 
 func opActiveCell(cell rune) bool {
-	return cell == CellOpA || cell == CellOpH || cell == CellOpM || cell == CellOpT || cell == CellOpP
+	return cell == CellOpA ||
+		cell == CellOpP ||
+		cell == CellOpH ||
+		cell == CellOpHP ||
+		cell == CellOpM ||
+		cell == CellOpMP ||
+		cell == CellOpT
 }
 
 func myInactiveCell(cell rune) bool {
-	return cell == CellMeNA || cell == CellMeNM || cell == CellMeNT
+	return cell == CellMeN ||
+		cell == CellMeMN ||
+		cell == CellMeTN
 }
 
 func opInactiveCell(cell rune) bool {
-	return cell == CellOpNA || cell == CellOpNM || cell == CellOpNT
+	return cell == CellOpN ||
+		cell == CellOpMN ||
+		cell == CellOpTN
 }
 
 func (p *Player) compactFactor(pos *Position, grid [][]rune) int {
@@ -1495,7 +1546,11 @@ func (s *State) moveUnits(owner int) {
 				continue
 			}
 			// Op HQ capturing moves (by any unit)
-			if p.isEnemyHQ(nbrCell) {
+			if p.isEnemyUnprotectedHQ(nbrCell) {
+				candidateCmds.appendMove(u, pos, nbrPos, 20)
+				continue
+			}
+			if u.Level == 3 && p.isEnemyProtectedHQ(nbrCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 20)
 				continue
 			}
@@ -1504,8 +1559,12 @@ func (s *State) moveUnits(owner int) {
 				candidateCmds.appendMove(u, pos, nbrPos, 19)
 				continue
 			}
-			// Op TOWER-protected land capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyProtected(nbrCell) && !myUnitCell(unitCell) {
+			// Op TOWER-protected mines and land capturing moves (only by l3 unit)
+			if u.Level == 3 && p.isEnemyProtectedMine(nbrCell) && !myUnitCell(unitCell) {
+				candidateCmds.appendMove(u, pos, nbrPos, 18)
+				continue
+			}
+			if u.Level == 3 && p.isEnemyProtectedEmpty(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 18)
 				continue
 			}
@@ -1525,12 +1584,12 @@ func (s *State) moveUnits(owner int) {
 				continue
 			}
 			// Op active MINE capturing moves (by any unit)
-			if p.isEnemyMine(nbrCell) && !myUnitCell(unitCell) {
+			if p.isEnemyUnprotectedMine(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 14)
 				continue
 			}
 			// Op unit l1 capturing moves (only by any l2 or l3 unit)
-			if (u.Level == 3 || u.Level == 2) && p.isEnemyUnitLevel1(unitCell) && !p.isEnemyProtected(nbrCell) && !myUnitCell(unitCell) {
+			if (u.Level == 3 || u.Level == 2) && p.isEnemyUnitLevel1(unitCell) && !p.isEnemyProtectedAny(nbrCell) && !myUnitCell(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 13)
 				//s.addMove(u, pos, nbrPos)
 				continue
@@ -1813,7 +1872,7 @@ func (s *State) findTowerSpotBeyondDist2(pos *Position) *Position {
 		pos.getCell(s.UnitGrid) != CellNeutral ||
 		pos.getCell(g.MineGrid) == CellMine ||
 		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeNT)) &&
+		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeTN)) &&
 		!pos.sameAs(g.Me.Hq) {
 		//fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
 		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
@@ -1832,7 +1891,7 @@ func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
 		pos.getCell(s.UnitGrid) != CellNeutral ||
 		pos.getCell(g.MineGrid) == CellMine ||
 		pos.isOrHasNeighbour(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbour(s.Grid, CellMeNT)) &&
+		pos.isOrHasNeighbour(s.Grid, CellMeTN)) &&
 		!pos.sameAs(g.Me.Hq) {
 		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
 		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
