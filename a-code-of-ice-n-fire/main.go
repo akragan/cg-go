@@ -20,8 +20,7 @@ const (
 	StandGroundL1 = true
 	StandGroundL2 = true
 
-	SortUnitsAsc  = true
-	SortUnitsDesc = false // used only if SortUnitsAsc==false
+	SortUnitsAsc = true
 
 	MaxTowers = 1
 	Min1      = 3
@@ -655,6 +654,13 @@ func (p *Player) isEnemyProtectedAny(cell rune) bool {
 		p.isEnemyProtectedHQ(cell)
 }
 
+func (p *Player) myMine() rune {
+	if p.Id == IdMe {
+		return CellMeM
+	}
+	return CellOpM
+}
+
 func (p *Player) isEnemyUnprotectedMine(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpM
@@ -970,8 +976,8 @@ func (g *Game) initGame() {
 	}
 }
 
-func (g *Game) getHqTowerPosition() *Position {
-	if g.Me.Hq.X == 0 {
+func (gp *GamePlayer) getHqTowerPosition() *Position {
+	if gp.Hq.X == 0 {
 		// build tower at (1,1)
 		pos := &Position{X: 1, Y: 1}
 		if pos.getCell(g.MineGrid) == CellMine {
@@ -989,8 +995,8 @@ func (g *Game) getHqTowerPosition() *Position {
 	return pos
 }
 
-func (g *Game) getHqMinePosition() *Position {
-	if g.Me.Hq.X == 0 {
+func (gp *GamePlayer) getHqMinePosition() *Position {
+	if gp.Hq.X == 0 {
 		// build mine at (1,0)
 		return &Position{X: 1, Y: 0}
 	}
@@ -1099,6 +1105,69 @@ func copyUnits(u []*Unit) []*Unit {
 	return u2
 }
 
+func (s *State) applyBuildings() {
+	s.Me.NbMines = 0
+	s.Op.NbMines = 0
+	s.Me.NbTowers = 0
+	s.Op.NbTowers = 0
+	// reflect buildings on s.Grid
+	// sort HQ/mines first, towers last - to protect correctly
+	sort.Slice(s.Buildings, func(i, j int) bool { return s.Buildings[j].Type == TypeTower })
+	for i := 0; i < s.NbBuildings; i++ {
+		b := s.Buildings[i]
+		bPos := b.Pos()
+		bOwner := s.player(b.Owner)
+		cell := bPos.getCell(s.Grid)
+
+		switch b.Type {
+		case TypeHq:
+			if b.Owner == IdMe {
+				g.Me.Hq = bPos
+				bPos.setCell(s.Grid, CellMeH)
+			} else {
+				g.Op.Hq = bPos
+				bPos.setCell(s.Grid, CellOpH)
+			}
+		case TypeMine:
+			if b.Owner == IdMe {
+				if myActiveCell(cell) {
+					bPos.setCell(s.Grid, CellMeM)
+				} else {
+					bPos.setCell(s.Grid, CellMeMN)
+				}
+				// TODO find out if inactive mines count towards building cost
+				s.Me.NbMines++
+			} else {
+				if bPos.getCell(s.Grid) == CellOpA {
+					bPos.setCell(s.Grid, CellOpM)
+				} else {
+					bPos.setCell(s.Grid, CellOpMN)
+				}
+				s.Op.NbMines++
+			}
+		case TypeTower:
+			cell := bPos.getCell(s.Grid)
+			if b.Owner == IdMe {
+				// tower cell active or protected by another tower
+				if myActiveCell(cell) {
+					bOwner.addActiveTower(bPos)
+				} else {
+					bPos.setCell(s.Grid, CellMeTN)
+				}
+				s.Me.NbTowers++
+			} else {
+				// tower cell active or protected by another tower
+				if opActiveCell(cell) {
+					bOwner.addActiveTower(bPos)
+				} else {
+					bPos.setCell(s.Grid, CellOpTN)
+				}
+				s.Op.NbTowers++
+			}
+		}
+	}
+}
+
 func (s *State) init() {
 	pos := &Position{}
 
@@ -1158,62 +1227,7 @@ func (s *State) init() {
 		fmt.Scan(&b.Owner, &b.Type, &b.X, &b.Y)
 		s.Buildings[i] = &b
 	}
-	// reflect buildings on s.Grid
-	// sort HQ/mines first, towers last - to protect correctly
-	sort.Slice(s.Buildings, func(i, j int) bool { return s.Buildings[j].Type == TypeTower })
-	for i := 0; i < s.NbBuildings; i++ {
-		b := s.Buildings[i]
-		bPos := b.Pos()
-		bOwner := s.player(b.Owner)
-		cell := bPos.getCell(s.Grid)
-
-		switch b.Type {
-		case TypeHq:
-			if b.Owner == IdMe {
-				g.Me.Hq = bPos
-				bPos.setCell(s.Grid, CellMeH)
-			} else {
-				g.Op.Hq = bPos
-				bPos.setCell(s.Grid, CellOpH)
-			}
-		case TypeMine:
-			if b.Owner == IdMe {
-				if myActiveCell(cell) {
-					bPos.setCell(s.Grid, CellMeM)
-				} else {
-					bPos.setCell(s.Grid, CellMeMN)
-				}
-				// TODO find out if inactive mines count towards building cost
-				s.Me.NbMines++
-			} else {
-				if bPos.getCell(s.Grid) == CellOpA {
-					bPos.setCell(s.Grid, CellOpM)
-				} else {
-					bPos.setCell(s.Grid, CellOpMN)
-				}
-				s.Op.NbMines++
-			}
-		case TypeTower:
-			cell := bPos.getCell(s.Grid)
-			if b.Owner == IdMe {
-				// tower cell active or protected by another tower
-				if myActiveCell(cell) {
-					bOwner.addActiveTower(bPos)
-				} else {
-					bPos.setCell(s.Grid, CellMeTN)
-				}
-				s.Me.NbTowers++
-			} else {
-				// tower cell active or protected by another tower
-				if opActiveCell(cell) {
-					bOwner.addActiveTower(bPos)
-				} else {
-					bPos.setCell(s.Grid, CellOpTN)
-				}
-				s.Op.NbTowers++
-			}
-		}
-	}
+	s.applyBuildings()
 
 	if g.Turn == 0 {
 		g.Me.initDistGrid(s.Grid)
@@ -1279,29 +1293,28 @@ func (s *State) init() {
 			}
 			return s.Units[i].Level < s.Units[j].Level
 		})
-	} else if SortUnitsDesc {
-		sort.Slice(s.Units, func(i, j int) bool {
-			if s.Units[i].Level == s.Units[j].Level {
-				return s.Units[i].Freedom < s.Units[j].Freedom
-			}
-			return s.Units[i].Level > s.Units[j].Level
-		})
 	}
 	s.Commands = []*Command{&Command{Type: CmdWait}}
 }
 
-func (s *State) addBuildMine(at *Position) {
-	s.Commands = append(s.Commands, &Command{Type: CmdBuildMine, X: at.X, Y: at.Y})
-	at.setCell(s.Grid, CellMeM)
-	s.Me.Gold -= CostMine
-	s.Me.NbMines += 1
+func (p *Player) addBuildMine(at *Position) {
+	s := p.State
+	if p.Id == IdMe {
+		s.Commands = append(s.Commands, &Command{Type: CmdBuildMine, X: at.X, Y: at.Y})
+	}
+	at.setCell(s.Grid, p.myMine())
+	p.Gold -= CostMine
+	p.NbMines += 1
 }
 
-func (s *State) addBuildTower(at *Position) {
-	s.Commands = append(s.Commands, &Command{Type: CmdBuildTower, X: at.X, Y: at.Y})
-	s.Me.addActiveTower(at)
-	s.Me.Gold -= CostTower
-	s.Me.NbTowers += 1
+func (p *Player) addBuildTower(at *Position) {
+	s := p.State
+	if p.Id == IdMe {
+		s.Commands = append(s.Commands, &Command{Type: CmdBuildTower, X: at.X, Y: at.Y})
+	}
+	p.addActiveTower(at)
+	p.Gold -= CostTower
+	p.NbTowers += 1
 }
 
 func (s *State) addMove(p *Player, u *Unit, from *Position, to *Position) {
@@ -1534,7 +1547,6 @@ func (s *State) moveUnits(owner int) {
 		for _, dir := range dirs {
 
 			nbrPos := pos.neighbour(dir)
-
 			if nbrPos == nil {
 				continue
 			}
@@ -1905,31 +1917,36 @@ func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
 	return nil
 }
 
-func (s *State) buildMinesAndTowers() {
-	if s.Me.NbTowers < MaxTowers && s.Me.Gold > CostTower {
+func (s *State) buildMinesAndTowers(playerId int) {
+	p := s.player(playerId)
+	if p.NbTowers < MaxTowers && p.Gold > CostTower {
 		// build tower near HQ
-		spot := g.getHqTowerPosition()
-		if spot.getCell(s.Grid) == CellMeA && spot.getCell(s.UnitGrid) == CellNeutral {
+		spot := p.Game.getHqTowerPosition()
+		cell := spot.getCell(s.Grid)
+		unitCell := spot.getCell(s.UnitGrid)
+		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
-			s.addBuildTower(spot)
-		} else if spot = s.findTowerSpotBeyondDist2(s.Op.MinDistGoal); spot != nil {
+			p.addBuildTower(spot)
+		} else if spot = s.findTowerSpotBeyondDist2(p.Other.MinDistGoal); spot != nil {
 			// build towers on Op ChainTrainWin path
-			s.addBuildTower(spot)
+			p.addBuildTower(spot)
 		} else {
-			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
-			if spot = s.findTowerSpotBeyondDist1(s.Op.MinDistGoal); spot != nil {
-				s.addBuildTower(spot)
+			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+			if spot = s.findTowerSpotBeyondDist1(p.Other.MinDistGoal); spot != nil {
+				p.addBuildTower(spot)
 			} else {
-				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
 			}
 		}
 	}
 	// build mine near HQ
-	if s.Me.NbMines == 0 && s.Me.Gold > CostMine {
-		pos := g.getHqMinePosition()
-		if pos.getCell(s.Grid) == CellMeA && pos.getCell(s.UnitGrid) == CellNeutral {
+	if p.NbMines == 0 && p.Gold > CostMine {
+		spot := p.Game.getHqMinePosition()
+		cell := spot.getCell(s.Grid)
+		unitCell := spot.getCell(s.UnitGrid)
+		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
-			s.addBuildMine(pos)
+			p.addBuildMine(spot)
 		}
 	}
 }
@@ -1965,7 +1982,7 @@ func main() {
 
 			// 0. look for BUILD MINE and/or TOWER commands
 			s2 = s.deepCopy()
-			s2.buildMinesAndTowers()
+			s2.buildMinesAndTowers(IdMe)
 			s2.moveUnits(IdOp)
 			// evaluate after BUILD cmds - no change to active areas
 			if len(s2.Commands) > 0 {
