@@ -17,7 +17,7 @@ const (
 
 	// debug
 	DebugChainTrainWin = false
-	DebugActiveArea    = true
+	DebugActiveArea    = false
 	DebugNeutral       = false
 	DebugTrain         = false
 	DebugBuildTower    = false
@@ -474,8 +474,8 @@ func (p *Player) deepCopy() *Player {
 	}
 }
 
-func (p *Player) addUnit(u *Unit) {
-	p.State.Units = append(p.State.Units, u)
+func (s *State) addUnit(u *Unit) {
+	p := s.player(u.Owner)
 	p.NbUnits++
 	switch u.Level {
 	case 1:
@@ -573,7 +573,7 @@ func (p *Player) income() int {
 }
 
 func (p *Player) expectedIncome() int {
-	return p.ActiveArea + p.areaCapturableNextTurn() +
+	return p.ActiveArea + p.nextTurnCaptures() +
 		4*p.NbMines - p.Upkeep
 }
 
@@ -1280,8 +1280,12 @@ func (p *Player) areaCapturableNextTurn() int {
 			}
 		}
 	} // for all units
-	fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, len(capturable))
-	return len(capturable)
+	nbCapturable := len(capturable)
+	fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, nbCapturable)
+	if nbCapturable > p.NbUnits {
+		return p.NbUnits
+	}
+	return nbCapturable
 }
 
 func (s *State) applyUnits() {
@@ -1302,7 +1306,7 @@ func (s *State) applyUnits() {
 			p.MinDistGoalUnit = u
 		}
 		pos.setCell(s.UnitGrid, p.myUnit(u.Level))
-		p.addUnit(u)
+		s.addUnit(u)
 	} // for all units
 }
 
@@ -1451,7 +1455,10 @@ func (s *State) addTrain(playerId int, at *Position, level int) {
 	case 3:
 		p.Gold -= CostTrain3
 	}
-	p.addUnit(&Unit{Owner: playerId, Id: -1, Level: level, X: at.X, Y: at.Y})
+	u := &Unit{Owner: playerId, Id: -1, Level: level, X: at.X, Y: at.Y}
+	s.addUnit(u)
+	s.Units = append(p.State.Units, u)
+	s.NbUnits++
 	cell := at.getCell(s.Grid)
 	if DebugTrain {
 		fmt.Fprintf(os.Stderr, "\t%s: training level %d at cell %s(%d,%d)\n", p.Game.Name, level, string(cell), at.X, at.Y)
