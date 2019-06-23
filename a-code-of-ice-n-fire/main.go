@@ -474,18 +474,19 @@ func (p *Player) deepCopy() *Player {
 	}
 }
 
-func (this *Player) addUnit(u *Unit) {
-	this.NbUnits++
+func (p *Player) addUnit(u *Unit) {
+	p.State.Units = append(p.State.Units, u)
+	p.NbUnits++
 	switch u.Level {
 	case 1:
-		this.NbUnits1++
-		this.Upkeep += CostKeep1
+		p.NbUnits1++
+		p.Upkeep += CostKeep1
 	case 2:
-		this.NbUnits2++
-		this.Upkeep += CostKeep2
+		p.NbUnits2++
+		p.Upkeep += CostKeep2
 	case 3:
-		this.NbUnits3++
-		this.Upkeep += CostKeep3
+		p.NbUnits3++
+		p.Upkeep += CostKeep3
 	}
 }
 
@@ -505,24 +506,11 @@ func (p *Player) addActiveArea(pos *Position) {
 	}
 }
 
-func activate(cell rune) rune {
-	switch cell {
-
-	case CellMeN:
+func (p *Player) activate(cell rune) rune {
+	if p.Id == IdMe {
 		return CellMeA
-	case CellMeMN:
-		return CellMeM
-	case CellMeTN:
-		return CellMeT
-
-	case CellOpN:
-		return CellOpA
-	case CellOpMN:
-		return CellOpM
-	case CellOpTN:
-		return CellOpT
 	}
-	return cell
+	return CellOpA
 }
 
 func protect(cell rune) rune {
@@ -1292,6 +1280,7 @@ func (p *Player) areaCapturableNextTurn() int {
 			}
 		}
 	} // for all units
+	fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, len(capturable))
 	return len(capturable)
 }
 
@@ -1462,10 +1451,13 @@ func (s *State) addTrain(playerId int, at *Position, level int) {
 	case 3:
 		p.Gold -= CostTrain3
 	}
-	p.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
+	p.addUnit(&Unit{Owner: playerId, Id: -1, Level: level, X: at.X, Y: at.Y})
 	cell := at.getCell(s.Grid)
+	if DebugTrain {
+		fmt.Fprintf(os.Stderr, "\t%s: training level %d at cell %s(%d,%d)\n", p.Game.Name, level, string(cell), at.X, at.Y)
+	}
 	if !p.isMyActiveCell(cell) {
-		activeCell := activate(cell)
+		activeCell := p.activate(cell)
 		at.setCell(s.Grid, activeCell)
 		if s.isProtectedIfActive(playerId, at) {
 			at.setCell(s.Grid, protect(activeCell))
