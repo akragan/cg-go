@@ -500,6 +500,9 @@ func (this *Player) addActiveArea(pos *Position) {
 	if dist < this.MinDistGoal.Dist {
 		this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
 	}
+	if DebugActiveArea {
+		fmt.Fprintf(os.Stderr, "\t\t%s active area (%d) - added (%d,%d)\n", p.Game.Name, p.ActiveArea, pos.X, pos.Y)
+	}
 }
 
 func activate(cell rune) rune {
@@ -898,6 +901,10 @@ func (s *State) calculateActiveAreas() {
 }
 
 func (p *Player) recalculateActiveArea() {
+	if DebugActiveArea {
+		fmt.Fprintf(os.Stderr, "\t\t%s recalculating active area (%d)\n", p.Game.Name, p.ActiveArea)
+	}
+
 	activeCells := make([][]rune, GridDim)
 	for i := 0; i < GridDim; i++ {
 		activeCells[i] = []rune(RowNeutral)
