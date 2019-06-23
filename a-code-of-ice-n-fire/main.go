@@ -18,6 +18,7 @@ const (
 	// debug
 	DebugChainTrainWin = false
 	DebugActiveArea    = false
+	DebugNeutral       = false
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
@@ -1363,8 +1364,9 @@ func (s *State) init() {
 	s.Op.MinChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
 	s.Op.ActualChainTrainWinCost = s.Op.MinChainTrainWinCost
 
-	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
-
+	if DebugNeutral {
+		fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
+	}
 	// load buildings
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
