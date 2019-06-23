@@ -11,13 +11,16 @@ import "math"
 //import "strings"
 
 const (
+	//algo
+	AlgoNaive  = 0
+	AlgoMinMax = 1
+
 	// debug
 	DebugActiveArea = false
 	DebugTrain      = false
-	DebugBuildTower = true
+	DebugBuildTower = false
 
 	//options
-
 	StandGroundL1 = true
 	StandGroundL2 = true
 
@@ -976,7 +979,9 @@ func printIntGrid(label string, grid [][]int) {
 //---------------------------------------------------------------------------------------
 
 type Game struct {
+	Algo           int
 	Turn           int
+	Eval           float64
 	DiscountFactor float64
 
 	TurnTime time.Time
@@ -998,6 +1003,7 @@ func (g *Game) nextTurn() {
 }
 
 func (g *Game) initGame() {
+	g.Algo = AlgoNaive
 	g.Turn = 0
 	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
 
@@ -2036,77 +2042,91 @@ func (s *State) buildMinesAndTowers(playerId int) {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
+func naiveAlgo(s *State) *State {
+	s.evaluate("TURN START")
+	fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
+	eval := s.Eval
+
+	s2 := s.deepCopy()
+	s2.moveUnits(IdOp)
+	s2.calculateChainTrainWins(true, false)
+	s2.evaluate("DO NOTHING scenario")
+	fmt.Fprintf(os.Stderr, "%d: DO NOTHING eval change: %.1f\n", g.Turn, s2.Eval-eval)
+	eval = s2.Eval
+
+	// 0. look for BUILD MINE and/or TOWER commands
+	s2 = s.deepCopy()
+	s2.buildMinesAndTowers(IdMe)
+	s2.moveUnits(IdOp)
+	// evaluate after BUILD cmds - no change to active areas
+	if len(s2.Commands) > 0 {
+		s2.calculateChainTrainWins(true, false)
+		s2.evaluate("AFTER BUILD")
+		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s2.Eval-eval)
+		if s2.Eval >= eval {
+			eval = s2.Eval
+			fmt.Fprintf(os.Stderr, "\tappending BUILD commands\n")
+			s2.Commands = append(s.Commands, s2.Commands...)
+			s = s2
+		} else {
+			fmt.Fprintf(os.Stderr, "\tskipping BUILD commands\n")
+		}
+	}
+	// 1. look at MOVE commands
+	s2 = s.deepCopy()
+	s2.moveUnits(IdMe)
+	s2.moveUnits(IdOp)
+	// evaluate after move cmds
+	if len(s2.Commands) > 0 {
+		s2.calculateActiveAreas()
+	}
+	won := s2.calculateChainTrainWins(false, true)
+	if won {
+		s2.Commands = append(s.Commands, s2.Commands...)
+		s = s2
+	} else {
+		if len(s2.Commands) > 0 {
+			s2.evaluate("AFTER MOVE")
+			fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s2.Eval-eval)
+			if s2.Eval >= eval {
+				eval = s2.Eval
+				fmt.Fprintf(os.Stderr, "\tappending MOVE commands\n")
+				s2.Commands = append(s.Commands, s2.Commands...)
+				s = s2
+			} else {
+				fmt.Fprintf(os.Stderr, "\tskipping MOVE commands\n")
+			}
+		}
+		// 2. look at TRAIN commands
+		s = s.trainUnits(IdMe)
+	}
+	return s
+}
+
+func minMaxAlgo(s *State) *State {
+	return s
+}
+
 func main() {
 	g.TurnTime = time.Now()
 	g.initGame()
-	var turnEval float64
-	var eval float64
 	for ; ; g.nextTurn() {
 		s := &State{}
 		s.init()
 		g.RespTime = time.Now()
 
-		// evaluate on new turn before any commands
+		// check forced win on new turn before any scenarios
 		won := s.calculateChainTrainWins(true, true)
 		if !won {
-			s.evaluate("TURN START")
-			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-turnEval)
-			turnEval = s.Eval
-			fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-eval)
-			eval = s.Eval
+			s.evaluate(fmt.Sprintf("%d TURN START", g.Turn))
+			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
+			g.Eval = s.Eval
 
-			s2 := s.deepCopy()
-			s2.moveUnits(IdOp)
-			s2.calculateChainTrainWins(true, false)
-			s2.evaluate("DO NOTHING scenario")
-			fmt.Fprintf(os.Stderr, "%d: DO NOTHING eval change: %.1f\n", g.Turn, s2.Eval-eval)
-			eval = s2.Eval
-
-			// 0. look for BUILD MINE and/or TOWER commands
-			s2 = s.deepCopy()
-			s2.buildMinesAndTowers(IdMe)
-			s2.moveUnits(IdOp)
-			// evaluate after BUILD cmds - no change to active areas
-			if len(s2.Commands) > 0 {
-				s2.calculateChainTrainWins(true, false)
-				s2.evaluate("AFTER BUILD")
-				fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s2.Eval-eval)
-				if s2.Eval >= eval {
-					eval = s2.Eval
-					fmt.Fprintf(os.Stderr, "\tappending BUILD commands\n")
-					s2.Commands = append(s.Commands, s2.Commands...)
-					s = s2
-				} else {
-					fmt.Fprintf(os.Stderr, "\tskipping BUILD commands\n")
-				}
-			}
-			// 1. look at MOVE commands
-			s2 = s.deepCopy()
-			s2.moveUnits(IdMe)
-			s2.moveUnits(IdOp)
-			// evaluate after move cmds
-			if len(s2.Commands) > 0 {
-				s2.calculateActiveAreas()
-			}
-			won = s2.calculateChainTrainWins(false, true)
-			if won {
-				s2.Commands = append(s.Commands, s2.Commands...)
-				s = s2
-			} else {
-				if len(s2.Commands) > 0 {
-					s2.evaluate("AFTER MOVE")
-					fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s2.Eval-eval)
-					if s2.Eval >= eval {
-						eval = s2.Eval
-						fmt.Fprintf(os.Stderr, "\tappending MOVE commands\n")
-						s2.Commands = append(s.Commands, s2.Commands...)
-						s = s2
-					} else {
-						fmt.Fprintf(os.Stderr, "\tskipping MOVE commands\n")
-					}
-				}
-				// 2. look at TRAIN commands
-				s = s.trainUnits(IdMe)
+			switch g.Algo {
+			case AlgoNaive:
+				s = naiveAlgo(s)
+			case AlgoMinMax:
+				s = minMaxAlgo(s)
 			}
 		}
 		fmt.Println(s.action()) // Write action to stdout
