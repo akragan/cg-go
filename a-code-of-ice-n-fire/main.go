@@ -573,7 +573,7 @@ func (p *Player) income() int {
 }
 
 func (p *Player) expectedIncome() int {
-	return p.ActiveArea + p.nextTurnCaptures() +
+	return p.ActiveArea + p.areaCapturableNextTurn() +
 		4*p.NbMines - p.Upkeep
 }
 
