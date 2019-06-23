@@ -936,7 +936,7 @@ func (p *Player) recalculateActiveArea() {
 		//TODO update active area
 		//p.updateActive(activeCells)
 	} else if DebugActiveArea {
-		fmt.Fprintf(os.Stderr, "\t%d active area unchanged (%d)\n", p.Id, p.ActiveArea)
+		fmt.Fprintf(os.Stderr, "\t\t%s active area unchanged (%d)\n", p.Game.Name, p.ActiveArea)
 	}
 }
 
