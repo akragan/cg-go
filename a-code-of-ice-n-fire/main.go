@@ -489,16 +489,16 @@ func (this *Player) addUnit(u *Unit) {
 	}
 }
 
-func (this *Player) addActiveArea(pos *Position) {
-	this.ActiveArea++
+func (p *Player) addActiveArea(pos *Position) {
+	p.ActiveArea++
 	var dist int
-	if this.Game.Initialized {
-		dist = pos.getIntCell(this.Game.DistGrid)
+	if p.Game.Initialized {
+		dist = pos.getIntCell(p.Game.DistGrid)
 	} else {
 		dist = 22
 	}
-	if dist < this.MinDistGoal.Dist {
-		this.MinDistGoal.set(pos.X, pos.Y).Dist = dist
+	if dist < p.MinDistGoal.Dist {
+		p.MinDistGoal.set(pos.X, pos.Y).Dist = dist
 	}
 	if DebugActiveArea {
 		fmt.Fprintf(os.Stderr, "\t\t%s active area (%d) - added (%d,%d)\n", p.Game.Name, p.ActiveArea, pos.X, pos.Y)
