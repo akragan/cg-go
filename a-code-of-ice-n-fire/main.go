@@ -16,9 +16,11 @@ const (
 	AlgoMinMax = 1
 
 	// debug
-	DebugActiveArea = false
-	DebugTrain      = false
-	DebugBuildTower = false
+	DebugChainTrainWin = false
+	DebugActiveArea    = false
+	DebugTrain         = false
+	DebugBuildTower    = false
+	DebugDistGrid      = false
 
 	//options
 	StandGroundL1 = true
@@ -788,7 +790,9 @@ func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
 
 func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
 	p := s.player(playerId)
-	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
+	if DebugChainTrainWin {
+		fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
+	}
 	pos := p.MinDistGoal
 	unitCell := pos.getCell(p.State.UnitGrid)
 	isMyUnit := p.isMyUnit(unitCell)
@@ -813,7 +817,9 @@ func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute boo
 		}
 		if moveFirst && isMyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
 			// first move for free
-			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
+			if DebugChainTrainWin {
+				fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
+			}
 			// add move command
 			if execute {
 				cmds.appendMove(p.MinDistGoalUnit, fromPos, pos, posDist)
@@ -829,20 +835,28 @@ func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute boo
 	p.ActualChainTrainWinCost = actualCost
 	//fmt.Fprintf(os.Stderr, "end loop\n")
 	if p.Gold < actualCost {
-		fmt.Fprintf(os.Stderr, "\t[%s] Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+		if DebugChainTrainWin {
+			fmt.Fprintf(os.Stderr, "\t[%s] Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+		}
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+	if DebugChainTrainWin {
+		fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
+	}
 	if !execute {
 		return false
 	}
 	for i, cmd := range cmds.Candidates {
 		if cmd.Level == 0 { //move command
 			s.addMove(playerId, cmd.Unit, cmd.From, cmd.To)
-			fmt.Fprintf(os.Stderr, "\t%d: value %d, move %d to (%d,%d)\n", i, cmd.Value, cmd.Unit.Id, cmd.To.X, cmd.To.Y)
+			if DebugChainTrainWin {
+				fmt.Fprintf(os.Stderr, "\t%d: value %d, move %d to (%d,%d)\n", i, cmd.Value, cmd.Unit.Id, cmd.To.X, cmd.To.Y)
+			}
 		} else {
 			s.addTrain(playerId, cmd.To, cmd.Level)
-			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			if DebugChainTrainWin {
+				fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			}
 		}
 	}
 	return true
@@ -957,8 +971,10 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 		//printDistGrid()
 	} // for queue non-empty
 	this.Initialized = true
-	printIntGrid(this.Name+" DistGrid", this.DistGrid)
-	printIntGrid(this.Name+" DirGrid", this.DirGrid)
+	if DebugDistGrid {
+		printIntGrid(this.Name+" DistGrid", this.DistGrid)
+		printIntGrid(this.Name+" DirGrid", this.DirGrid)
+	}
 }
 
 func printIntGrid(label string, grid [][]int) {
