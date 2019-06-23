@@ -2163,7 +2163,7 @@ func main() {
 		// check forced win on new turn before any scenarios
 		won := s.calculateChainTrainWins(true, true)
 		if !won {
-			s.evaluate(fmt.Sprintf("NEW TURN", g.Turn))
+			s.evaluate("NEW TURN")
 			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
 			g.Eval = s.Eval
 
