@@ -14,6 +14,7 @@ const (
 	// debug
 	DebugActiveArea = false
 	DebugTrain      = false
+	DebugBuildTower = true
 
 	//options
 
@@ -659,6 +660,20 @@ func (p *Player) myMine() rune {
 		return CellMeM
 	}
 	return CellOpM
+}
+
+func (p *Player) myTower() rune {
+	if p.Id == IdMe {
+		return CellMeT
+	}
+	return CellOpT
+}
+
+func (p *Player) myInactiveTower() rune {
+	if p.Id == IdMe {
+		return CellMeTN
+	}
+	return CellOpTN
 }
 
 func (p *Player) isEnemyUnprotectedMine(cell rune) bool {
@@ -1879,41 +1894,55 @@ func costTrain(level int) int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func (s *State) findTowerSpotBeyondDist2(pos *Position) *Position {
-	for (pos.getCell(s.Grid) != CellMeA ||
-		pos.getCell(s.UnitGrid) != CellNeutral ||
-		pos.getCell(g.MineGrid) == CellMine ||
-		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbourAtDist2(s.Grid, CellMeTN)) &&
-		!pos.sameAs(g.Me.Hq) {
-		//fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
-		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
+func (p *Player) findTowerSpotBeyondDist2(pos *Position) *Position {
+	s := p.State
+	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
+		cell := pos.getCell(s.Grid)
+		unitCell := pos.getCell(s.UnitGrid)
+		mineCell := pos.getCell(g.MineGrid)
+		if p.isMyEmptyActiveCell(cell) &&
+			unitCell == CellNeutral &&
+			mineCell != CellMine &&
+			!pos.isOrHasNeighbourAtDist2(s.Grid, p.myTower()) &&
+			!pos.isOrHasNeighbourAtDist2(s.Grid, p.myInactiveTower()) {
+			break
+		}
+		if DebugBuildTower {
+			fmt.Fprintf(os.Stderr, "\t find tower dist2: traversing (%d,%d)\n", pos.X, pos.Y)
+		}
 	}
-	fmt.Fprintf(os.Stderr, "%d: Tower candidate at (%d,%d)\n", g.Turn, pos.X, pos.Y)
-	if !pos.sameAs(g.Me.Hq) {
-		fmt.Fprintf(os.Stderr, "\t accepted (%d,%d)\n", pos.X, pos.Y)
+	if !pos.sameAs(p.Game.Hq) {
+		if DebugBuildTower {
+			fmt.Fprintf(os.Stderr, "%d: Tower candidate at (%d,%d)\n", g.Turn, pos.X, pos.Y)
+		}
 		return pos
 	}
-	fmt.Fprintf(os.Stderr, "\t rejected (%d,%d)\n", pos.X, pos.Y)
 	return nil
 }
 
-func (s *State) findTowerSpotBeyondDist1(pos *Position) *Position {
-	for (pos.getCell(s.Grid) != CellMeA ||
-		pos.getCell(s.UnitGrid) != CellNeutral ||
-		pos.getCell(g.MineGrid) == CellMine ||
-		pos.isOrHasNeighbour(s.Grid, CellMeT) ||
-		pos.isOrHasNeighbour(s.Grid, CellMeTN)) &&
-		!pos.sameAs(g.Me.Hq) {
-		fmt.Fprintf(os.Stderr, "\t traversing (%d,%d)\n", pos.X, pos.Y)
-		pos = pos.neighbour(pos.getIntCell(g.Op.DirGrid))
+func (p *Player) findTowerSpotBeyondDist1(pos *Position) *Position {
+	s := p.State
+	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
+		cell := pos.getCell(s.Grid)
+		unitCell := pos.getCell(s.UnitGrid)
+		mineCell := pos.getCell(g.MineGrid)
+		if p.isMyEmptyActiveCell(cell) &&
+			unitCell == CellNeutral &&
+			mineCell != CellMine &&
+			!pos.isOrHasNeighbour(s.Grid, p.myTower()) &&
+			!pos.isOrHasNeighbour(s.Grid, p.myInactiveTower()) {
+			break
+		}
+		if DebugBuildTower {
+			fmt.Fprintf(os.Stderr, "\t find tower dist1: traversing (%d,%d)\n", pos.X, pos.Y)
+		}
 	}
-	fmt.Fprintf(os.Stderr, "\t candidate at (%d,%d)\n", pos.X, pos.Y)
 	if !pos.sameAs(g.Me.Hq) {
-		fmt.Fprintf(os.Stderr, "\t accepted (%d,%d)\n", pos.X, pos.Y)
+		if DebugBuildTower {
+			fmt.Fprintf(os.Stderr, "%d: Tower candidate at (%d,%d)\n", pos.X, pos.Y)
+		}
 		return pos
 	}
-	fmt.Fprintf(os.Stderr, "\t rejected (%d,%d)\n", pos.X, pos.Y)
 	return nil
 }
 
@@ -1927,12 +1956,12 @@ func (s *State) buildMinesAndTowers(playerId int) {
 		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
 			p.addBuildTower(spot)
-		} else if spot = s.findTowerSpotBeyondDist2(p.Other.MinDistGoal); spot != nil {
+		} else if spot = p.findTowerSpotBeyondDist2(p.Other.MinDistGoal); spot != nil {
 			// build towers on Op ChainTrainWin path
 			p.addBuildTower(spot)
 		} else {
 			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
-			if spot = s.findTowerSpotBeyondDist1(p.Other.MinDistGoal); spot != nil {
+			if spot = p.findTowerSpotBeyondDist1(p.Other.MinDistGoal); spot != nil {
 				p.addBuildTower(spot)
 			} else {
 				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
