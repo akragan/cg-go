@@ -897,13 +897,13 @@ func (s *State) calculateActiveAreas() {
 	s.Op.recalculateActiveArea()
 }
 
-func (this *Player) recalculateActiveArea() {
+func (p *Player) recalculateActiveArea() {
 	activeCells := make([][]rune, GridDim)
 	for i := 0; i < GridDim; i++ {
 		activeCells[i] = []rune(RowNeutral)
 	}
 	activeArea := 0
-	pos := &Position{X: this.Game.Hq.X, Y: this.Game.Hq.Y, Dist: 0}
+	pos := &Position{X: p.Game.Hq.X, Y: p.Game.Hq.Y, Dist: 0}
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
@@ -911,12 +911,12 @@ func (this *Player) recalculateActiveArea() {
 		if activeCell != CellNeutral {
 			continue
 		}
-		cell := pos.getCell(this.State.Grid)
-		if this.isMyActiveCell(cell) {
+		cell := pos.getCell(p.State.Grid)
+		if p.isMyActiveCell(cell) {
 			activeArea += 1
 			pos.setCell(activeCells, CellMine)
 			if DebugActiveArea {
-				fmt.Fprintf(os.Stderr, "\t%d: %d active cells (%d,%d)\n", this.Id, activeArea, pos.X, pos.Y)
+				fmt.Fprintf(os.Stderr, "\t\t%s: %d active cells (%d,%d)\n", p.Game.Name, activeArea, pos.X, pos.Y)
 			}
 		} else {
 			pos.setCell(activeCells, CellVoid)
@@ -924,37 +924,37 @@ func (this *Player) recalculateActiveArea() {
 		dirs := DirDRUL
 		for _, dir := range dirs {
 			nbrPos := pos.neighbour(dir)
-			if nbrPos != nil && this.isMyActiveCell(nbrPos.getCell(this.State.Grid)) {
+			if nbrPos != nil && p.isMyActiveCell(nbrPos.getCell(p.State.Grid)) {
 				todo = todo.Put(nbrPos)
 			} // if not visited
 		} // for all dirs
 	}
-	activeAreaChg := activeArea - this.ActiveArea
+	activeAreaChg := activeArea - p.ActiveArea
 	if activeAreaChg != 0 {
-		fmt.Fprintf(os.Stderr, "\t%d active area changed by %d (from %d to %d)\n", this.Id, activeAreaChg, this.ActiveArea, activeArea)
-		//this.ActiveArea = activeArea
+		fmt.Fprintf(os.Stderr, "\t%d active area changed by %d (from %d to %d)\n", p.Id, activeAreaChg, p.ActiveArea, activeArea)
+		//p.ActiveArea = activeArea
 		//TODO update active area
-		//this.updateActive(activeCells)
+		//p.updateActive(activeCells)
 	} else if DebugActiveArea {
-		fmt.Fprintf(os.Stderr, "\t%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
+		fmt.Fprintf(os.Stderr, "\t%d active area unchanged (%d)\n", p.Id, p.ActiveArea)
 	}
 }
 
-func (this *GamePlayer) initDistGrid(grid [][]rune) {
-	pos := &Position{X: this.Other.Hq.X, Y: this.Other.Hq.Y, Dist: 0}
+func (gp *GamePlayer) initDistGrid(grid [][]rune) {
+	pos := &Position{X: gp.Other.Hq.X, Y: gp.Other.Hq.Y, Dist: 0}
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
-		if pos.getIntCell(this.DistGrid) != -1 {
+		if pos.getIntCell(gp.DistGrid) != -1 {
 			continue
 		}
 		//fmt.Fprintf(os.Stderr, "init DistGrid: (%d,%d):%d, queue size=%d\n", pos.X, pos.Y, pos.Dist, len(todo))
 		if pos.getCell(grid) == CellVoid {
-			pos.setIntCell(this.DistGrid, InfDist)
+			pos.setIntCell(gp.DistGrid, InfDist)
 		} else {
-			pos.setIntCell(this.DistGrid, pos.Dist)
+			pos.setIntCell(gp.DistGrid, pos.Dist)
 			if pos.Dist != 0 {
-				pos.setIntCell(this.DirGrid, pos.findNeighbourDir(this.DistGrid, pos.Dist-1))
+				pos.setIntCell(gp.DirGrid, pos.findNeighbourDir(gp.DistGrid, pos.Dist-1))
 			}
 			dirs := DirDRUL
 			if RandomDirsAtInitDistGrid {
@@ -962,7 +962,7 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 			}
 			for _, dir := range dirs {
 				nbrPos := pos.neighbour(dir)
-				if nbrPos != nil && nbrPos.getIntCell(this.DistGrid) == -1 {
+				if nbrPos != nil && nbrPos.getIntCell(gp.DistGrid) == -1 {
 					nbrPos.Dist = pos.Dist + 1
 					todo = todo.Put(nbrPos)
 					//fmt.Fprintf(os.Stderr, "\tdir=%v add (%d,%d):%d, queue size=%d\n", dir, nbrPos.X, nbrPos.Y, nbrPos.Dist, len(todo))
@@ -971,10 +971,10 @@ func (this *GamePlayer) initDistGrid(grid [][]rune) {
 		} // if/else cell void
 		//printDistGrid()
 	} // for queue non-empty
-	this.Initialized = true
+	gp.Initialized = true
 	if DebugDistGrid {
-		printIntGrid(this.Name+" DistGrid", this.DistGrid)
-		printIntGrid(this.Name+" DirGrid", this.DirGrid)
+		printIntGrid(gp.Name+" DistGrid", gp.DistGrid)
+		printIntGrid(gp.Name+" DirGrid", gp.DirGrid)
 	}
 }
 
