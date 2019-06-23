@@ -2091,10 +2091,7 @@ func (s *State) buildMinesAndTowers(playerId int) {
 //---------------------------------------------------------------------------------------
 
 func naiveAlgo(s *State) *State {
-	s.evaluate("TURN START")
-	fmt.Fprintf(os.Stderr, "%d: OP MOVE eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
 	eval := s.Eval
-
 	s2 := s.deepCopy()
 	s2.moveUnits(IdOp)
 	s2.calculateChainTrainWins(true, false)
@@ -2166,7 +2163,7 @@ func main() {
 		// check forced win on new turn before any scenarios
 		won := s.calculateChainTrainWins(true, true)
 		if !won {
-			s.evaluate(fmt.Sprintf("%d TURN START", g.Turn))
+			s.evaluate(fmt.Sprintf("NEW TURN", g.Turn))
 			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
 			g.Eval = s.Eval
 
