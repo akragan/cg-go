@@ -497,6 +497,26 @@ func (this *Player) addActiveArea(pos *Position) {
 	}
 }
 
+func activate(cell rune) rune {
+	switch cell {
+
+	case CellMeN:
+		return CellMeA
+	case CellMeMN:
+		return CellMeM
+	case CellMeTN:
+		return CellMeT
+
+	case CellOpN:
+		return CellOpA
+	case CellOpMN:
+		return CellOpM
+	case CellOpTN:
+		return CellOpT
+	}
+	return cell
+}
+
 func protect(cell rune) rune {
 	switch cell {
 
@@ -525,6 +545,20 @@ func (s *State) protectNeighbours(pos *Position) {
 			nbrPos.setCell(s.Grid, protect(nbrPos.getCell(s.Grid)))
 		}
 	} //end for
+}
+
+func (s *State) isProtectedIfActive(playerId int, pos *Position) bool {
+	p := s.player(playerId)
+	for _, dir := range DirDRUL {
+		nbrPos := pos.neighbour(dir)
+		if nbrPos != nil {
+			cell := nbrPos.getCell(s.Grid)
+			if p.isMyTower(cell) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (this *Player) addActiveTower(bPos *Position) {
@@ -573,16 +607,16 @@ func (p *Player) myUnit(level int) rune {
 
 func (p *Player) isMyUnit(unitCell rune) bool {
 	if p.Id == IdMe {
-		return myUnitCell(unitCell)
+		return isMyUnitCell(unitCell)
 	}
-	return opUnitCell(unitCell)
+	return isOpUnitCell(unitCell)
 }
 
 func (p *Player) isEnemyUnit(unitCell rune) bool {
 	if p.Id == IdMe {
-		return opUnitCell(unitCell)
+		return isOpUnitCell(unitCell)
 	}
-	return myUnitCell(unitCell)
+	return isMyUnitCell(unitCell)
 }
 
 func (p *Player) isEnemyUnitLevel1(unitCell rune) bool {
@@ -625,6 +659,13 @@ func (p *Player) isEnemyProtectedHQ(cell rune) bool {
 		return cell == CellOpHP
 	}
 	return cell == CellMeHP
+}
+
+func (p *Player) isMyTower(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellMeT
+	}
+	return cell == CellOpT
 }
 
 func (p *Player) isEnemyTower(cell rune) bool {
@@ -727,25 +768,26 @@ func (p *Player) isEnemyEmptyInactiveCell(cell rune) bool {
 
 func (p *Player) isMyActiveCell(cell rune) bool {
 	if p.Id == IdMe {
-		return myActiveCell(cell)
+		return isMyActiveCell(cell)
 	}
-	return opActiveCell(cell)
+	return isOpActiveCell(cell)
 }
 
 func (p *Player) isEnemyActiveCell(cell rune) bool {
 	if p.Id == IdMe {
-		return opActiveCell(cell)
+		return isOpActiveCell(cell)
 	}
-	return myActiveCell(cell)
+	return isMyActiveCell(cell)
 }
 
 func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
-	won := s.Me.calculateChainTrainWin(moveFirst, execute)
-	s.Op.calculateChainTrainWin(true, false)
+	won := s.calculateChainTrainWin(IdMe, moveFirst, execute)
+	s.calculateChainTrainWin(IdOp, true, false)
 	return won
 }
 
-func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) bool {
+func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
+	p := s.player(playerId)
 	fmt.Fprintf(os.Stderr, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
 	pos := p.MinDistGoal
 	unitCell := pos.getCell(p.State.UnitGrid)
@@ -796,10 +838,10 @@ func (p *Player) calculateChainTrainWin(moveFirst bool, execute bool) bool {
 	}
 	for i, cmd := range cmds.Candidates {
 		if cmd.Level == 0 { //move command
-			p.State.addMove(p, cmd.Unit, cmd.From, cmd.To)
+			s.addMove(playerId, cmd.Unit, cmd.From, cmd.To)
 			fmt.Fprintf(os.Stderr, "\t%d: value %d, move %d to (%d,%d)\n", i, cmd.Value, cmd.Unit.Id, cmd.To.X, cmd.To.Y)
 		} else {
-			p.State.addTrain(cmd.To, cmd.Level)
+			s.addTrain(playerId, cmd.To, cmd.Level)
 			fmt.Fprintf(os.Stderr, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		}
 	}
@@ -1145,7 +1187,7 @@ func (s *State) applyBuildings() {
 			}
 		case TypeMine:
 			if b.Owner == IdMe {
-				if myActiveCell(cell) {
+				if isMyActiveCell(cell) {
 					bPos.setCell(s.Grid, CellMeM)
 				} else {
 					bPos.setCell(s.Grid, CellMeMN)
@@ -1164,7 +1206,7 @@ func (s *State) applyBuildings() {
 			cell := bPos.getCell(s.Grid)
 			if b.Owner == IdMe {
 				// tower cell active or protected by another tower
-				if myActiveCell(cell) {
+				if isMyActiveCell(cell) {
 					bOwner.addActiveTower(bPos)
 				} else {
 					bPos.setCell(s.Grid, CellMeTN)
@@ -1172,7 +1214,7 @@ func (s *State) applyBuildings() {
 				s.Me.NbTowers++
 			} else {
 				// tower cell active or protected by another tower
-				if opActiveCell(cell) {
+				if isOpActiveCell(cell) {
 					bOwner.addActiveTower(bPos)
 				} else {
 					bPos.setCell(s.Grid, CellOpTN)
@@ -1231,8 +1273,6 @@ func (s *State) init() {
 	s.Op.ActualChainTrainWinCost = s.Op.MinChainTrainWinCost
 
 	fmt.Fprintf(os.Stderr, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
-	//fmt.Fprintf(os.Stderr, "%d: Me.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y, s.Me.MinDistGoal.Dist)
-	//fmt.Fprintf(os.Stderr, "%d: Op.MinDistGoal=(%d,%d):%d\n", g.Turn, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y, s.Op.MinDistGoal.Dist)
 
 	// load buildings
 	fmt.Scan(&s.NbBuildings)
@@ -1312,30 +1352,31 @@ func (s *State) init() {
 	s.Commands = []*Command{&Command{Type: CmdWait}}
 }
 
-func (p *Player) addBuildMine(at *Position) {
-	s := p.State
-	if p.Id == IdMe {
+func (s *State) addBuildMine(playerId int, at *Position) {
+	if playerId == IdMe {
 		s.Commands = append(s.Commands, &Command{Type: CmdBuildMine, X: at.X, Y: at.Y})
 	}
+	p := s.player(playerId)
 	at.setCell(s.Grid, p.myMine())
 	p.Gold -= CostMine
 	p.NbMines += 1
 }
 
-func (p *Player) addBuildTower(at *Position) {
-	s := p.State
-	if p.Id == IdMe {
+func (s *State) addBuildTower(playerId int, at *Position) {
+	if playerId == IdMe {
 		s.Commands = append(s.Commands, &Command{Type: CmdBuildTower, X: at.X, Y: at.Y})
 	}
+	p := s.player(playerId)
 	p.addActiveTower(at)
 	p.Gold -= CostTower
 	p.NbTowers += 1
 }
 
-func (s *State) addMove(p *Player, u *Unit, from *Position, to *Position) {
-	if p.Id == IdMe {
+func (s *State) addMove(playerId int, u *Unit, from *Position, to *Position) {
+	if playerId == IdMe {
 		s.Commands = append(s.Commands, &Command{Type: CmdMove, Info: u.Id, X: to.X, Y: to.Y})
 	}
+	p := s.player(playerId)
 	if !from.sameAs(to) {
 		to.setCell(s.UnitGrid, p.myUnit(u.Level))
 		from.setCell(s.UnitGrid, CellNeutral)
@@ -1348,22 +1389,29 @@ func (s *State) addMove(p *Player, u *Unit, from *Position, to *Position) {
 	}
 }
 
-func (s *State) addTrain(at *Position, level int) {
-	s.Commands = append(s.Commands, &Command{Type: CmdTrain, Info: level, X: at.X, Y: at.Y})
-	at.setCell(s.UnitGrid, CellMeU)
+func (s *State) addTrain(playerId int, at *Position, level int) {
+	if playerId == IdMe {
+		s.Commands = append(s.Commands, &Command{Type: CmdTrain, Info: level, X: at.X, Y: at.Y})
+	}
+	p := s.player(playerId)
+	at.setCell(s.UnitGrid, p.myUnit(level))
 	switch level {
 	case 1:
-		s.Me.Gold -= CostTrain1
+		p.Gold -= CostTrain1
 	case 2:
-		s.Me.Gold -= CostTrain2
+		p.Gold -= CostTrain2
 	case 3:
-		s.Me.Gold -= CostTrain3
+		p.Gold -= CostTrain3
 	}
-	s.Me.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
+	p.addUnit(&Unit{Owner: IdMe, Id: -1, Level: level, X: at.X, Y: at.Y})
 	cell := at.getCell(s.Grid)
-	if !myActiveCell(cell) {
-		at.setCell(s.Grid, CellMeA)
-		s.Me.addActiveArea(at)
+	if !p.isMyActiveCell(cell) {
+		activeCell := activate(cell)
+		at.setCell(s.Grid, activeCell)
+		if s.isProtectedIfActive(playerId, at) {
+			at.setCell(s.Grid, protect(activeCell))
+		}
+		p.addActiveArea(at)
 	}
 }
 
@@ -1452,19 +1500,19 @@ func (this *CommandSelector) best() *CandidateCommand {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func myUnitCell(cell rune) bool {
+func isMyUnitCell(cell rune) bool {
 	return cell == CellMeU || cell == CellMeU2 || cell == CellMeU3
 }
 
-func opUnitCell(cell rune) bool {
+func isOpUnitCell(cell rune) bool {
 	return cell == CellOpU || cell == CellOpU2 || cell == CellOpU3
 }
 
-func anyUnitCell(cell rune) bool {
-	return myUnitCell(cell) || opUnitCell(cell)
+func isAnyUnitCell(cell rune) bool {
+	return isMyUnitCell(cell) || isOpUnitCell(cell)
 }
 
-func myActiveCell(cell rune) bool {
+func isMyActiveCell(cell rune) bool {
 	return cell == CellMeA ||
 		cell == CellMeP ||
 		cell == CellMeH ||
@@ -1474,7 +1522,7 @@ func myActiveCell(cell rune) bool {
 		cell == CellMeT
 }
 
-func opActiveCell(cell rune) bool {
+func isOpActiveCell(cell rune) bool {
 	return cell == CellOpA ||
 		cell == CellOpP ||
 		cell == CellOpH ||
@@ -1484,13 +1532,13 @@ func opActiveCell(cell rune) bool {
 		cell == CellOpT
 }
 
-func myInactiveCell(cell rune) bool {
+func isMyInactiveCell(cell rune) bool {
 	return cell == CellMeN ||
 		cell == CellMeMN ||
 		cell == CellMeTN
 }
 
-func opInactiveCell(cell rune) bool {
+func isOpInactiveCell(cell rune) bool {
 	return cell == CellOpN ||
 		cell == CellOpMN ||
 		cell == CellOpTN
@@ -1547,12 +1595,12 @@ func randDirs() []int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func (s *State) moveUnits(owner int) {
+func (s *State) moveUnits(playerId int) {
 	pos := &Position{}
-	p := s.player(owner)
+	p := s.player(playerId)
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
-		if u.Owner != owner || u.Id == -1 { // -1 for newly trained units that cannot move
+		if u.Owner != playerId || u.Id == -1 { // -1 for newly trained units that cannot move
 			continue
 		}
 		pos.set(u.X, u.Y)
@@ -1582,54 +1630,55 @@ func (s *State) moveUnits(owner int) {
 				continue
 			}
 			// Op active TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyTower(nbrCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyTower(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 19)
 				continue
 			}
 			// Op TOWER-protected mines and land capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyProtectedMine(nbrCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyProtectedMine(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 18)
 				continue
 			}
-			if u.Level == 3 && p.isEnemyProtectedEmpty(nbrCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyProtectedEmpty(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 18)
 				continue
 			}
 			// Op inactive TOWER capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyInactiveTower(nbrCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyInactiveTower(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 17)
 				continue
 			}
 			// Op unit l3 capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyUnitLevel3(unitCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyUnitLevel3(unitCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 16)
 				continue
 			}
 			// Op unit l2 capturing moves (only by l3 unit)
-			if u.Level == 3 && p.isEnemyUnitLevel2(unitCell) && !myUnitCell(unitCell) {
+			if u.Level == 3 && p.isEnemyUnitLevel2(unitCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 15)
 				continue
 			}
 			// Op active MINE capturing moves (by any unit)
-			if p.isEnemyUnprotectedMine(nbrCell) && !myUnitCell(unitCell) {
+			if p.isEnemyUnprotectedMine(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 14)
 				continue
 			}
 			// Op unit l1 capturing moves (only by any l2 or l3 unit)
-			if (u.Level == 3 || u.Level == 2) && p.isEnemyUnitLevel1(unitCell) && !p.isEnemyProtectedAny(nbrCell) && !myUnitCell(unitCell) {
+			if (u.Level == 3 || u.Level == 2) && p.isEnemyUnitLevel1(unitCell) &&
+				!p.isEnemyProtectedAny(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 13)
 				//s.addMove(u, pos, nbrPos)
 				continue
 			}
 			// Op INactive MINE capturing moves (by any unit)
-			if p.isEnemyInactiveMine(nbrCell) && !myUnitCell(unitCell) {
+			if p.isEnemyInactiveMine(nbrCell) && !p.isMyUnit(unitCell) {
 				candidateCmds.appendMove(u, pos, nbrPos, 12)
 				continue
 			}
 			// Op active land capturing moves (by any unit)
 			// ++ priority for cells splitting Op territory
 			// + priority for cells keeping my territory compact
-			if p.isEnemyEmptyActiveCell(nbrCell) && !anyUnitCell(unitCell) {
+			if p.isEnemyEmptyActiveCell(nbrCell) && !isAnyUnitCell(unitCell) {
 				if s.Me.isWedge(nbrPos, s.Grid) {
 					candidateCmds.appendMove(u, pos, nbrPos, 11)
 				} else if s.Me.compactFactor(nbrPos, s.Grid) > 1 {
@@ -1641,7 +1690,7 @@ func (s *State) moveUnits(owner int) {
 			}
 			// Op INactive land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
-			if p.isEnemyEmptyInactiveCell(nbrCell) && !myUnitCell(unitCell) {
+			if p.isEnemyEmptyInactiveCell(nbrCell) && !p.isMyUnit(unitCell) {
 				if s.Me.compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 8)
 				} else {
@@ -1651,7 +1700,7 @@ func (s *State) moveUnits(owner int) {
 			}
 			// new land capturing moves (by any unit)
 			// + more priority for cells keeping my territory compact
-			if nbrCell == CellNeutral && !myUnitCell(unitCell) {
+			if nbrCell == CellNeutral && !p.isMyUnit(unitCell) {
 				if s.Me.compactFactor(nbrPos, s.Grid) > 1 {
 					candidateCmds.appendMove(u, pos, nbrPos, 5)
 				} else {
@@ -1670,7 +1719,7 @@ func (s *State) moveUnits(owner int) {
 			// just moving to another free cell (by any unit)
 			// value depends on whether we're getting closer or further from Op Hq
 			// 1 if closer, 0 if same, -1 if further
-			if p.isMyEmptyActiveCell(nbrCell) && !myUnitCell(unitCell) {
+			if p.isMyEmptyActiveCell(nbrCell) && !p.isMyUnit(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
 				if currDist-nbrDist >= 0 || MoveBackwards {
@@ -1682,7 +1731,7 @@ func (s *State) moveUnits(owner int) {
 		// pick the best move for unit
 		if bestCmd := candidateCmds.best(); bestCmd != nil {
 			//fmt.Fprintf(os.Stderr, "Unit:%d, Candidates:%d, Best:%d X:%d Y:%d\n", bestCmd.Unit.Id, len(candidateCmds.Candidates), bestCmd.Value, bestCmd.To.X, bestCmd.To.Y)
-			s.addMove(p, bestCmd.Unit, bestCmd.From, bestCmd.To)
+			s.addMove(playerId, bestCmd.Unit, bestCmd.From, bestCmd.To)
 		}
 	}
 }
@@ -1692,26 +1741,27 @@ func (s *State) moveUnits(owner int) {
 // this produces dupe candidate train commands (in the same spots)
 // as cells are neighbours of several other cells
 // needs to be sorted and de-duped before execution
-func (s *State) candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, pos *Position) {
+func (s *State) candidateTrainCmdsInNeighbourhood(playerId int, cmds *CommandSelector, pos *Position) {
 
+	p := s.player(playerId)
 	// 1. consider current cell (lowest value)
 	cell := pos.getCell(s.Grid)
 	unitCell := pos.getCell(s.UnitGrid)
 
-	if cell == CellMeA && unitCell == CellNeutral {
+	if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 		// copy pos
 		pos := &Position{X: pos.X, Y: pos.Y}
 		// consider level 1
-		if s.Me.Gold > CostTrain1 {
-			cmds.appendTrain(1, pos, 3-pos.getIntCell(g.Me.DistGrid))
+		if p.Gold > CostTrain1 {
+			cmds.appendTrain(1, pos, 3-pos.getIntCell(p.Game.DistGrid))
 		}
 		// consider level 2
-		if s.Me.Gold > CostTrain2 {
-			cmds.appendTrain(2, pos, 1-pos.getIntCell(g.Me.DistGrid))
+		if p.Gold > CostTrain2 {
+			cmds.appendTrain(2, pos, 1-pos.getIntCell(p.Game.DistGrid))
 		}
 		// consider level 3
-		if s.Me.Gold > CostTrain3 {
-			cmds.appendTrain(3, pos, 2-pos.getIntCell(g.Me.DistGrid))
+		if p.Gold > CostTrain3 {
+			cmds.appendTrain(3, pos, 2-pos.getIntCell(p.Game.DistGrid))
 		}
 	}
 
@@ -1723,88 +1773,88 @@ func (s *State) candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, pos *Po
 			continue
 		}
 		nbrCell := nbrPos.getCell(s.Grid)
-		if myActiveCell(nbrCell) {
+		if p.isMyActiveCell(nbrCell) {
 			// will be considered in its own right
 			continue
 		}
 		nbrUnitCell := nbrPos.getCell(s.UnitGrid)
 		bonus := 0
-		if s.Me.isWedge(nbrPos, s.Grid) {
+		if p.isWedge(nbrPos, s.Grid) {
 			bonus += 3
 		}
 
-		if (nbrCell == CellNeutral || opInactiveCell(nbrCell)) && nbrUnitCell == CellNeutral {
+		if (nbrCell == CellNeutral || p.isEnemyEmptyInactiveCell(nbrCell)) && nbrUnitCell == CellNeutral {
 			// consider level 1
-			if s.Me.Gold > CostTrain1 {
+			if p.Gold > CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 6+bonus)
 			}
 			// consider level 2
-			if s.Me.Gold > CostTrain2 {
+			if p.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 4+bonus)
 			}
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 5+bonus)
 			}
 		}
 
-		if (nbrCell == CellOpA || nbrCell == CellOpM) && nbrUnitCell == CellNeutral {
+		if (p.isEnemyEmptyActiveCell(nbrCell) || p.isEnemyUnprotectedMine(nbrCell)) && nbrUnitCell == CellNeutral {
 			// consider level 1
-			if s.Me.Gold > CostTrain1 {
+			if p.Gold > CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 9+bonus)
 			}
 			// consider level 2
-			if s.Me.Gold > CostTrain2 {
+			if p.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 8+bonus)
 			}
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 7+bonus)
 			}
 		}
 
-		if nbrUnitCell == CellOpU && nbrCell != CellOpP {
+		if p.isEnemyUnitLevel1(nbrUnitCell) && !p.isEnemyProtectedEmpty(nbrCell) {
 			// consider level 2 and 3
-			if s.Me.Gold > CostTrain2 {
+			if p.Gold > CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 11+bonus)
 			}
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10+bonus)
 			}
 		}
 
-		if nbrUnitCell == CellOpU2 {
+		if p.isEnemyUnitLevel2(nbrUnitCell) {
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12+bonus)
 			}
 		}
 
-		if nbrCell == CellOpT || nbrCell == CellOpP {
+		if p.isEnemyProtectedAny(nbrCell) {
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
 			}
 		}
 
-		if nbrUnitCell == CellOpU3 {
+		if p.isEnemyUnitLevel3(nbrUnitCell) {
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 15+bonus)
 			}
 		}
 
-		if nbrCell == CellOpP && nbrPos.sameAs(g.Op.Hq) {
+		if p.isEnemyProtectedHQ(nbrCell) {
 			// consider level 3
-			if s.Me.Gold > CostTrain3 {
+			if p.Gold > CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 100)
 			}
 		}
 
-		if nbrCell == CellOpH {
+		if p.isEnemyUnprotectedHQ(nbrCell) {
 			// consider level 1
-			if s.Me.Gold > CostTrain1 {
+			if p.Gold > CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 100)
 			}
 		}
@@ -1812,8 +1862,9 @@ func (s *State) candidateTrainCmdsInNeighbourhood(cmds *CommandSelector, pos *Po
 	} //for dir
 }
 
-func (s *State) trainUnits(eval float64) *State {
-	if s.Me.Gold < CostTrain1 {
+func (s *State) trainUnits(playerId int) *State {
+	p := s.player(playerId)
+	if p.Gold < CostTrain1 {
 		// no gold to train any units
 		return s
 	}
@@ -1823,11 +1874,11 @@ func (s *State) trainUnits(eval float64) *State {
 		for i := 0; i < GridDim; i++ {
 			pos.set(i, j)
 			cell := pos.getCell(s.Grid)
-			if !myActiveCell(cell) {
+			if !p.isMyActiveCell(cell) {
 				// can only train on and next to active area
 				continue
 			}
-			s.candidateTrainCmdsInNeighbourhood(candidateCmds, pos)
+			s.candidateTrainCmdsInNeighbourhood(playerId, candidateCmds, pos)
 		} // for i
 	} // for j
 
@@ -1847,12 +1898,12 @@ func (s *State) trainUnits(eval float64) *State {
 			}
 			cost := costTrain(cmd.Level)
 			fmt.Fprintf(os.Stderr, "%d: TRAIN candidate: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, s.Me.Gold, s.Me.income(), s.Me.Upkeep)
-			if i < NbEvaluatedTrainCandidates && cost <= s.Me.Gold && s.Me.income() >= s.Me.Upkeep {
-
+			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
+			if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
+				eval := s.Eval
 				s2 := s.deepCopy()
-				s2.addTrain(cmd.To, cmd.Level)
-				s2.moveUnits(IdOp)
+				s2.addTrain(p.Id, cmd.To, cmd.Level)
+				s2.moveUnits(p.Other.Id)
 				// evaluate after each TRAIN cmd (and opponent move)
 				s2.calculateActiveAreas()
 				s2.calculateChainTrainWins(true, false)
@@ -1862,7 +1913,9 @@ func (s *State) trainUnits(eval float64) *State {
 				if s2.Eval >= eval {
 					eval = s2.Eval
 					fmt.Fprintf(os.Stderr, "\tappending TRAIN command\n")
-					s2.Commands = append(s.Commands, s2.Commands...)
+					if p.Id == IdMe {
+						s2.Commands = append(s.Commands, s2.Commands...)
+					}
 					s = s2
 				} else {
 					fmt.Fprintf(os.Stderr, "\tskipping TRAIN command\n")
@@ -1894,8 +1947,8 @@ func costTrain(level int) int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
-func (p *Player) findTowerSpotBeyondDist2(pos *Position) *Position {
-	s := p.State
+func (s *State) findTowerSpotBeyondDist2(playerId int, pos *Position) *Position {
+	p := s.player(playerId)
 	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
 		cell := pos.getCell(s.Grid)
 		unitCell := pos.getCell(s.UnitGrid)
@@ -1920,8 +1973,8 @@ func (p *Player) findTowerSpotBeyondDist2(pos *Position) *Position {
 	return nil
 }
 
-func (p *Player) findTowerSpotBeyondDist1(pos *Position) *Position {
-	s := p.State
+func (s *State) findTowerSpotBeyondDist1(playerId int, pos *Position) *Position {
+	p := s.player(playerId)
 	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
 		cell := pos.getCell(s.Grid)
 		unitCell := pos.getCell(s.UnitGrid)
@@ -1937,7 +1990,7 @@ func (p *Player) findTowerSpotBeyondDist1(pos *Position) *Position {
 			fmt.Fprintf(os.Stderr, "\t find tower dist1: traversing (%d,%d)\n", pos.X, pos.Y)
 		}
 	}
-	if !pos.sameAs(g.Me.Hq) {
+	if !pos.sameAs(p.Game.Hq) {
 		if DebugBuildTower {
 			fmt.Fprintf(os.Stderr, "%d: Tower candidate at (%d,%d)\n", pos.X, pos.Y)
 		}
@@ -1955,14 +2008,14 @@ func (s *State) buildMinesAndTowers(playerId int) {
 		unitCell := spot.getCell(s.UnitGrid)
 		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
-			p.addBuildTower(spot)
-		} else if spot = p.findTowerSpotBeyondDist2(p.Other.MinDistGoal); spot != nil {
+			s.addBuildTower(playerId, spot)
+		} else if spot = s.findTowerSpotBeyondDist2(playerId, p.Other.MinDistGoal); spot != nil {
 			// build towers on Op ChainTrainWin path
-			p.addBuildTower(spot)
+			s.addBuildTower(playerId, spot)
 		} else {
 			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
-			if spot = p.findTowerSpotBeyondDist1(p.Other.MinDistGoal); spot != nil {
-				p.addBuildTower(spot)
+			if spot = s.findTowerSpotBeyondDist1(playerId, p.Other.MinDistGoal); spot != nil {
+				s.addBuildTower(playerId, spot)
 			} else {
 				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
 			}
@@ -1975,7 +2028,7 @@ func (s *State) buildMinesAndTowers(playerId int) {
 		unitCell := spot.getCell(s.UnitGrid)
 		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
-			p.addBuildMine(spot)
+			s.addBuildMine(playerId, spot)
 		}
 	}
 }
@@ -2053,7 +2106,7 @@ func main() {
 					}
 				}
 				// 2. look at TRAIN commands
-				s = s.trainUnits(eval)
+				s = s.trainUnits(IdMe)
 			}
 		}
 		fmt.Println(s.action()) // Write action to stdout
