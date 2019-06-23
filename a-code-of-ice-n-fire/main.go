@@ -35,9 +35,8 @@ const (
 	TrainNegativeEvalPainTolerance  = -25.0
 	NbEvaluatedTrainCandidates      = 50
 
-	EvalDiscountRate                    = 5.0
-	EvalHqCaptureFactor                 = 100.0
-	EvalExpectedIncomeFactorFromNeutral = 0.25
+	EvalDiscountRate    = 5.0
+	EvalHqCaptureFactor = 100.0
 
 	//constants
 	GridDim = 12
@@ -575,15 +574,13 @@ func (this *Player) addActiveTower(bPos *Position) {
 	} //end if
 }
 
-func (this *Player) income() int {
-	return this.ActiveArea + 4*this.NbMines - this.Upkeep
+func (p *Player) income() int {
+	return p.ActiveArea + 4*p.NbMines - p.Upkeep
 }
 
-func (this *Player) expectedIncome() int {
-	pctUnits := float64(this.NbUnits+1) / float64(this.State.NbUnits+2)
-	return this.ActiveArea +
-		int(EvalExpectedIncomeFactorFromNeutral*pctUnits*float64(this.State.Neutral)) +
-		4*this.NbMines - this.Upkeep
+func (p *Player) expectedIncome() int {
+	return p.ActiveArea + p.areaCapturableNextTurn() +
+		4*p.NbMines - p.Upkeep
 }
 
 func (p *Player) myUnit(level int) rune {
@@ -990,11 +987,12 @@ type Game struct {
 	Me *GamePlayer
 	Op *GamePlayer
 
-	NbMines     int
-	Mines       []*Position
-	MineGrid    [][]rune
-	InitNeutral int
-	InTouch     bool
+	NbMines         int
+	Mines           []*Position
+	MineGrid        [][]rune
+	InitNeutralArea int
+	TotalArea       int
+	InTouch         bool
 }
 
 func (g *Game) nextTurn() {
@@ -1008,7 +1006,8 @@ func (g *Game) initGame() {
 	g.DiscountFactor = math.Exp(-1.0 * EvalDiscountRate)
 
 	fmt.Scan(&g.NbMines)
-	g.InitNeutral = 0
+	g.InitNeutralArea = 0
+	g.TotalArea = 0
 	g.InTouch = false
 	g.Mines = make([]*Position, g.NbMines)
 	g.MineGrid = make([][]rune, GridDim)
@@ -1231,6 +1230,69 @@ func (s *State) applyBuildings() {
 	}
 }
 
+func (p *Player) isCapturable(level int, cell rune, unitCell rune) bool {
+	switch level {
+	case 1:
+		return !p.isMyActiveCell(cell) &&
+			!p.isEnemyProtectedAny(cell) &&
+			!p.isEnemyInactiveTower(cell) &&
+			!p.isEnemyUnit(unitCell)
+	case 2:
+		return !p.isMyActiveCell(cell) &&
+			!p.isEnemyProtectedAny(cell) &&
+			!p.isEnemyInactiveTower(cell) &&
+			!p.isEnemyUnitLevel2or3(unitCell)
+	case 3:
+		return !p.isMyActiveCell(cell)
+	}
+	return false
+}
+
+func (p *Player) areaCapturableNextTurn() int {
+	capturable := make(map[int]bool)
+	s := p.State
+	for i := 0; i < s.NbUnits; i++ {
+		u := s.Units[i]
+		if u.Owner != p.Id {
+			continue
+		}
+		pos := u.Pos()
+		for _, dir := range DirDRUL {
+			nbrPos := pos.neighbour(dir)
+			if nbrPos != nil {
+				nbrCell := nbrPos.getCell(s.Grid)
+				nbrUnitCell := nbrPos.getCell(s.UnitGrid)
+				if p.isCapturable(u.Level, nbrCell, nbrUnitCell) {
+					capturable[nbrPos.toInt()] = true
+				}
+			}
+		}
+	} // for all units
+	return len(capturable)
+}
+
+func (s *State) applyUnits() {
+	pos := &Position{}
+	for i := 0; i < s.NbUnits; i++ {
+		u := s.Units[i]
+		p := s.player(u.Owner)
+		pos.set(u.X, u.Y)
+		if !g.InTouch && p.Id == IdMe && pos.findNeighbour(s.Grid, CellOpA) != -1 {
+			g.InTouch = true
+		}
+		u.Freedom = pos.freedom(s.Grid)
+		pos.setDistance(p.Game.Other.Hq)
+		if p.MinUnitDistGoal > pos.Dist {
+			p.MinUnitDistGoal = pos.Dist
+		}
+		if p.MinDistGoal.sameAs(pos) {
+			p.MinDistGoalUnit = u
+		}
+		pos.setCell(s.UnitGrid, p.myUnit(u.Level))
+		p.addUnit(u)
+	} // for all units
+}
+
 func (s *State) init() {
 	pos := &Position{}
 
@@ -1260,19 +1322,26 @@ func (s *State) init() {
 		for j := 0; j < GridDim; j++ {
 			pos.set(j, i)
 			if line[j] == CellMeA {
+				if g.Turn == 0 {
+					g.TotalArea += 1
+				}
 				s.Me.addActiveArea(pos)
 			} else if line[j] == CellOpA {
+				if g.Turn == 0 {
+					g.TotalArea += 1
+				}
 				s.Op.addActiveArea(pos)
 			} else if line[j] == CellNeutral {
 				if g.Turn == 0 {
-					g.InitNeutral += 1
+					g.TotalArea += 1
+					g.InitNeutralArea += 1
 				}
 				s.Neutral += 1
 			}
 		}
 		s.UnitGrid[i] = []rune(RowNeutral)
 	}
-	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutral)
+	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutralArea)
 	s.Me.MinChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
 	s.Me.ActualChainTrainWinCost = s.Me.MinChainTrainWinCost
 	s.Op.MinChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
@@ -1301,49 +1370,8 @@ func (s *State) init() {
 		u := &Unit{}
 		fmt.Scan(&u.Owner, &u.Id, &u.Level, &u.X, &u.Y)
 		s.Units[i] = u
-		pos.set(u.X, u.Y)
-		if u.Owner == IdMe {
-			if !g.InTouch {
-				if pos.findNeighbour(s.Grid, CellOpA) != -1 {
-					g.InTouch = true
-				}
-			}
-			u.Freedom = pos.freedom(s.Grid)
-			pos.setDistance(g.Op.Hq)
-			if s.Me.MinUnitDistGoal > pos.Dist {
-				s.Me.MinUnitDistGoal = pos.Dist
-			}
-			if s.Me.MinDistGoal.sameAs(pos) {
-				s.Me.MinDistGoalUnit = u
-			}
-			switch u.Level {
-			case 1:
-				pos.setCell(s.UnitGrid, CellMeU)
-			case 2:
-				pos.setCell(s.UnitGrid, CellMeU2)
-			case 3:
-				pos.setCell(s.UnitGrid, CellMeU3)
-			}
-			s.Me.addUnit(u)
-		} else {
-			pos.setDistance(g.Me.Hq)
-			if s.Op.MinUnitDistGoal > pos.Dist {
-				s.Op.MinUnitDistGoal = pos.Dist
-			}
-			if s.Op.MinDistGoal.sameAs(pos) {
-				s.Op.MinDistGoalUnit = u
-			}
-			switch u.Level {
-			case 1:
-				pos.setCell(s.UnitGrid, CellOpU)
-			case 2:
-				pos.setCell(s.UnitGrid, CellOpU2)
-			case 3:
-				pos.setCell(s.UnitGrid, CellOpU3)
-			}
-			s.Op.addUnit(u)
-		}
 	}
+	s.applyUnits()
 	// sort units from l1 to l3 (l1 will move first)
 	// the idea being for them to be moving into enemy's camp first)
 	// then by freedom - units less free should move first
