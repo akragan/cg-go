@@ -2063,11 +2063,13 @@ func (s *State) buildMinesAndTowers(playerId int) {
 			// build towers on Op ChainTrainWin path
 			s.addBuildTower(playerId, spot)
 		} else {
-			fmt.Fprintf(os.Stderr, "Couldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+			if DebugBuildTower {
+				fmt.Fprintf(os.Stderr, "\tCouldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+			}
 			if spot = s.findTowerSpotBeyondDist1(playerId, p.Other.MinDistGoal); spot != nil {
 				s.addBuildTower(playerId, spot)
-			} else {
-				fmt.Fprintf(os.Stderr, "Couldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+			} else if DebugBuildTower {
+				fmt.Fprintf(os.Stderr, "\tCouldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
 			}
 		}
 	}
