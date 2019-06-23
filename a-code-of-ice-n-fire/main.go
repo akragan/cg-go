@@ -17,7 +17,7 @@ const (
 
 	// debug
 	DebugChainTrainWin = false
-	DebugActiveArea    = false
+	DebugActiveArea    = true
 	DebugNeutral       = false
 	DebugTrain         = false
 	DebugBuildTower    = false
@@ -931,12 +931,12 @@ func (this *Player) recalculateActiveArea() {
 	}
 	activeAreaChg := activeArea - this.ActiveArea
 	if activeAreaChg != 0 {
-		fmt.Fprintf(os.Stderr, "%d active area changed by %d (from %d to %d)\n", this.Id, activeAreaChg, this.ActiveArea, activeArea)
+		fmt.Fprintf(os.Stderr, "\t%d active area changed by %d (from %d to %d)\n", this.Id, activeAreaChg, this.ActiveArea, activeArea)
 		//this.ActiveArea = activeArea
 		//TODO update active area
 		//this.updateActive(activeCells)
 	} else if DebugActiveArea {
-		fmt.Fprintf(os.Stderr, "%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
+		fmt.Fprintf(os.Stderr, "\t%d active area unchanged (%d)\n", this.Id, this.ActiveArea)
 	}
 }
 
@@ -1949,7 +1949,7 @@ func (s *State) trainUnits(playerId int) *State {
 				continue
 			}
 			cost := costTrain(cmd.Level)
-			fmt.Fprintf(os.Stderr, "%d: TRAIN candidate: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+			fmt.Fprintf(os.Stderr, "%d: %dth TRAIN candidate: value %d, level %d at (%d,%d)\n", g.Turn, i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
 			if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
 				eval := s.Eval
