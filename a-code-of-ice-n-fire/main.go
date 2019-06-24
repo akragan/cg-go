@@ -1261,7 +1261,7 @@ func (p *Player) isCapturable(level int, cell rune, unitCell rune) bool {
 }
 
 func (p *Player) areaCapturableNextTurn() int {
-	capturable := make(map[int]bool)
+	captured := make(map[int]bool)
 	s := p.State
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
@@ -1274,17 +1274,15 @@ func (p *Player) areaCapturableNextTurn() int {
 			if nbrPos != nil {
 				nbrCell := nbrPos.getCell(s.Grid)
 				nbrUnitCell := nbrPos.getCell(s.UnitGrid)
-				if p.isCapturable(u.Level, nbrCell, nbrUnitCell) {
-					capturable[nbrPos.toInt()] = true
+				if p.isCapturable(u.Level, nbrCell, nbrUnitCell) && !captured[nbrPos.toInt()] {
+					captured[nbrPos.toInt()] = true
+					break
 				}
 			}
 		}
 	} // for all units
-	nbCapturable := len(capturable)
+	nbCapturable := len(captured)
 	fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, nbCapturable)
-	if nbCapturable > p.NbUnits {
-		return p.NbUnits
-	}
 	return nbCapturable
 }
 
@@ -1447,14 +1445,7 @@ func (s *State) addTrain(playerId int, at *Position, level int) {
 	}
 	p := s.player(playerId)
 	at.setCell(s.UnitGrid, p.myUnit(level))
-	switch level {
-	case 1:
-		p.Gold -= CostTrain1
-	case 2:
-		p.Gold -= CostTrain2
-	case 3:
-		p.Gold -= CostTrain3
-	}
+	p.Gold -= costTrain(level)
 	u := &Unit{Owner: playerId, Id: -1, Level: level, X: at.X, Y: at.Y}
 	s.addUnit(u)
 	s.Units = append(p.State.Units, u)
@@ -1810,15 +1801,15 @@ func (s *State) candidateTrainCmdsInNeighbourhood(playerId int, cmds *CommandSel
 		// copy pos
 		pos := &Position{X: pos.X, Y: pos.Y}
 		// consider level 1
-		if p.Gold > CostTrain1 {
+		if p.Gold >= CostTrain1 {
 			cmds.appendTrain(1, pos, 3-pos.getIntCell(p.Game.DistGrid))
 		}
 		// consider level 2
-		if p.Gold > CostTrain2 {
+		if p.Gold >= CostTrain2 {
 			cmds.appendTrain(2, pos, 1-pos.getIntCell(p.Game.DistGrid))
 		}
 		// consider level 3
-		if p.Gold > CostTrain3 {
+		if p.Gold >= CostTrain3 {
 			cmds.appendTrain(3, pos, 2-pos.getIntCell(p.Game.DistGrid))
 		}
 	}
@@ -1843,76 +1834,76 @@ func (s *State) candidateTrainCmdsInNeighbourhood(playerId int, cmds *CommandSel
 
 		if (nbrCell == CellNeutral || p.isEnemyEmptyInactiveCell(nbrCell)) && nbrUnitCell == CellNeutral {
 			// consider level 1
-			if p.Gold > CostTrain1 {
+			if p.Gold >= CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 6+bonus)
 			}
 			// consider level 2
-			if p.Gold > CostTrain2 {
+			if p.Gold >= CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 4+bonus)
 			}
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 5+bonus)
 			}
 		}
 
 		if (p.isEnemyEmptyActiveCell(nbrCell) || p.isEnemyUnprotectedMine(nbrCell)) && nbrUnitCell == CellNeutral {
 			// consider level 1
-			if p.Gold > CostTrain1 {
+			if p.Gold >= CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 9+bonus)
 			}
 			// consider level 2
-			if p.Gold > CostTrain2 {
+			if p.Gold >= CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 8+bonus)
 			}
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 7+bonus)
 			}
 		}
 
 		if p.isEnemyUnitLevel1(nbrUnitCell) && !p.isEnemyProtectedEmpty(nbrCell) {
 			// consider level 2 and 3
-			if p.Gold > CostTrain2 {
+			if p.Gold >= CostTrain2 {
 				cmds.appendTrain(2, nbrPos, 11+bonus)
 			}
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 10+bonus)
 			}
 		}
 
 		if p.isEnemyUnitLevel2(nbrUnitCell) {
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 12+bonus)
 			}
 		}
 
 		if p.isEnemyProtectedAny(nbrCell) {
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 13+bonus)
 			}
 		}
 
 		if p.isEnemyUnitLevel3(nbrUnitCell) {
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 15+bonus)
 			}
 		}
 
 		if p.isEnemyProtectedHQ(nbrCell) {
 			// consider level 3
-			if p.Gold > CostTrain3 {
+			if p.Gold >= CostTrain3 {
 				cmds.appendTrain(3, nbrPos, 100)
 			}
 		}
 
 		if p.isEnemyUnprotectedHQ(nbrCell) {
 			// consider level 1
-			if p.Gold > CostTrain1 {
+			if p.Gold >= CostTrain1 {
 				cmds.appendTrain(1, nbrPos, 100)
 			}
 		}
@@ -1954,14 +1945,16 @@ func (s *State) trainUnits(playerId int) *State {
 				//de-duped
 				continue
 			}
+			p = s.player(playerId)
 			cost := costTrain(cmd.Level)
 			fmt.Fprintf(os.Stderr, "%d: %dth TRAIN candidate: value %d, level %d at (%d,%d)\n", g.Turn, i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
 			if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
 				eval := s.Eval
 				s2 := s.deepCopy()
-				s2.addTrain(p.Id, cmd.To, cmd.Level)
-				s2.moveUnits(p.Other.Id)
+				p2 := s2.player(playerId)
+				s2.addTrain(p2.Id, cmd.To, cmd.Level)
+				s2.moveUnits(p2.Other.Id)
 				// evaluate after each TRAIN cmd (and opponent move)
 				s2.calculateActiveAreas()
 				s2.calculateChainTrainWins(true, false)
@@ -1970,8 +1963,8 @@ func (s *State) trainUnits(playerId int) *State {
 				fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
 				if s2.Eval >= eval {
 					eval = s2.Eval
-					fmt.Fprintf(os.Stderr, "\tappending TRAIN command\n")
-					if p.Id == IdMe {
+					fmt.Fprintf(os.Stderr, "\t%s: appending TRAIN command, my gold=%d\n", p2.Game.Name, p2.Gold)
+					if p2.Id == IdMe {
 						s2.Commands = append(s.Commands, s2.Commands...)
 					}
 					s = s2
