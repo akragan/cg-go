@@ -747,6 +747,20 @@ func (p *Player) isMyEmptyActiveCell(cell rune) bool {
 	return cell == CellOpA
 }
 
+func (p *Player) isMyEmptyProtectedCell(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellMeP
+	}
+	return cell == CellOpP
+}
+
+func (p *Player) isMyEmptyActiveOrProtectedCell(cell rune) bool {
+	if p.Id == IdMe {
+		return cell == CellMeA || cell == CellMeP
+	}
+	return cell == CellOpP
+}
+
 func (p *Player) isEnemyEmptyActiveCell(cell rune) bool {
 	if p.Id == IdMe {
 		return cell == CellOpA
@@ -1773,7 +1787,7 @@ func (s *State) moveUnits(playerId int) {
 			// just moving to another free cell (by any unit)
 			// value depends on whether we're getting closer or further from Op Hq
 			// 1 if closer, 0 if same, -1 if further
-			if p.isMyEmptyActiveCell(nbrCell) && !p.isMyUnit(unitCell) {
+			if p.isMyEmptyActiveOrProtectedCell(nbrCell) && !p.isMyUnit(unitCell) {
 				currDist := pos.getIntCell(g.Me.DistGrid)
 				nbrDist := nbrPos.getIntCell(g.Me.DistGrid)
 				if currDist-nbrDist >= 0 || MoveBackwards {
