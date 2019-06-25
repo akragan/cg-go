@@ -23,6 +23,7 @@ const (
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
+	DebugCostGrid      = true
 
 	//options
 	StandGroundL1 = true
@@ -113,6 +114,7 @@ const (
 	DirDown  = 3
 
 	InfDist = 100
+	InfCost = 1000
 )
 
 var (
@@ -438,9 +440,15 @@ type Player struct {
 
 	MinChainTrainWinCost    int
 	ActualChainTrainWinCost int
-	RoundsToHqCapture       float64
-	MilitaryPower           int
-	ExpectedMilitaryPower   int
+
+	CheapestWinCost  int
+	CheapestWinStart *Position
+	CostGrid         [][]int
+	DirGrid          [][]int
+
+	RoundsToHqCapture     float64
+	MilitaryPower         int
+	ExpectedMilitaryPower int
 }
 
 func (p *Player) deepCopy() *Player {
@@ -792,7 +800,78 @@ func (p *Player) isEnemyActiveCell(cell rune) bool {
 func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
 	won := s.calculateChainTrainWin(IdMe, moveFirst, execute)
 	s.calculateChainTrainWin(IdOp, true, false)
+
+	s.calculateCheapestWin(IdMe, moveFirst)
+	s.calculateCheapestWin(IdOp, moveFirst)
+
 	return won
+}
+
+func (p *Player) costToCapture(cell rune, unitCell rune) int {
+	if p.isMyActiveCell(cell) {
+		return 0
+	}
+	if p.isEnemyProtectedAny(cell) || p.isEnemyUnitLevel2or3(cell) {
+		return CostTrain3
+	}
+	if p.isEnemyUnitLevel1(unitCell) {
+		return CostTrain2
+	}
+	return CostTrain1
+}
+
+func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
+
+	p := s.player(playerId)
+	p.CostGrid = make([][]int, GridDim)
+	p.DirGrid = make([][]int, GridDim)
+	for i := 0; i < GridDim; i++ {
+		p.CostGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+		p.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
+	}
+
+	pos := &Position{X: p.Game.Other.Hq.X, Y: p.Game.Other.Hq.Y, Dist: 0}
+	todo := PositionQueue{pos}
+	for !todo.IsEmpty() {
+		todo, pos = todo.TakeFirst()
+		//fmt.Fprintf(os.Stderr, "init DistGrid: (%d,%d):%d, queue size=%d\n", pos.X, pos.Y, pos.Dist, len(todo))
+		cell := pos.getCell(s.Grid)
+		unitCell := pos.getCell(s.UnitGrid)
+		if cell == CellVoid {
+			pos.setIntCell(p.CostGrid, InfCost)
+			pos.setIntCell(p.DirGrid, -1)
+			continue
+		}
+		prevCost := pos.Dist
+		cellCost := p.costToCapture(cell, unitCell)
+		cost := pos.getIntCell(p.CostGrid)
+		if cost > 0 && cost <= prevCost+cellCost {
+			// already visited before, did not find a cheaper path
+			continue
+		}
+		// not visited or found a cheaper path
+		cost = prevCost + cellCost
+		pos.setIntCell(p.CostGrid, cost)
+		pos.setIntCell(p.DirGrid, pos.findNeighbourDir(p.CostGrid, prevCost))
+		// now revisit neighbours
+		dirs := DirDRUL
+		for _, dir := range dirs {
+			nbrPos := pos.neighbour(dir)
+			if nbrPos == nil {
+				continue
+			}
+			nbrCost := nbrPos.getIntCell(p.CostGrid)
+			if nbrCost <= 0 || nbrCost > cost {
+				// reconsider neighbour only if not visited yet or there's a chance of a cheaper path
+				nbrPos.Dist = cost
+				todo = todo.Put(nbrPos)
+			}
+		} // for all dirs
+	} // for queue non-empty
+	if DebugCostGrid {
+		printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
+		printIntGrid(fmt.Sprintf("%d: %s DirGrid", g.Turn, p.Game.Name), p.DirGrid)
+	}
 }
 
 func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
@@ -2074,6 +2153,16 @@ func (s *State) findTowerSpotBeyondDist1(playerId int, pos *Position) *Position 
 
 func (s *State) buildMinesAndTowers(playerId int) {
 	p := s.player(playerId)
+	// build mine near HQ
+	if p.NbMines == 0 && p.Gold > CostMine {
+		spot := p.Game.getHqMinePosition()
+		cell := spot.getCell(s.Grid)
+		unitCell := spot.getCell(s.UnitGrid)
+		if p.isMyEmptyActiveOrProtectedCell(cell) && unitCell == CellNeutral {
+			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
+			s.addBuildMine(playerId, spot)
+		}
+	}
 	if p.NbTowers < MaxTowers && p.Gold > CostTower {
 		// build tower near HQ
 		spot := p.Game.getHqTowerPosition()
@@ -2094,16 +2183,6 @@ func (s *State) buildMinesAndTowers(playerId int) {
 			} else if DebugBuildTower {
 				fmt.Fprintf(os.Stderr, "\tCouldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
 			}
-		}
-	}
-	// build mine near HQ
-	if p.NbMines == 0 && p.Gold > CostMine {
-		spot := p.Game.getHqMinePosition()
-		cell := spot.getCell(s.Grid)
-		unitCell := spot.getCell(s.UnitGrid)
-		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
-			fmt.Fprintf(os.Stderr, "%d: Build HQ mine\n", g.Turn)
-			s.addBuildMine(playerId, spot)
 		}
 	}
 }
