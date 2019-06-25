@@ -18,6 +18,7 @@ const (
 	// debug
 	DebugChainTrainWin = false
 	DebugActiveArea    = false
+	DebugCapturable    = false
 	DebugNeutral       = false
 	DebugTrain         = false
 	DebugBuildTower    = false
@@ -1282,7 +1283,9 @@ func (p *Player) areaCapturableNextTurn() int {
 		}
 	} // for all units
 	nbCapturable := len(captured)
-	fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, nbCapturable)
+	if DebugCapturable {
+		fmt.Fprintf(os.Stderr, "%d: %s capturable next turn %d\n", g.Turn, p.Game.Name, nbCapturable)
+	}
 	return nbCapturable
 }
 
@@ -1430,6 +1433,8 @@ func (s *State) addMove(playerId int, u *Unit, from *Position, to *Position) {
 	if !from.sameAs(to) {
 		to.setCell(s.UnitGrid, p.myUnit(u.Level))
 		from.setCell(s.UnitGrid, CellNeutral)
+		u.X = to.X
+		u.Y = to.Y
 
 		cell := to.getCell(s.Grid)
 		if !p.isMyActiveCell(cell) {
@@ -1830,6 +1835,9 @@ func (s *State) candidateTrainCmdsInNeighbourhood(playerId int, cmds *CommandSel
 		bonus := 0
 		if p.isWedge(nbrPos, s.Grid) {
 			bonus += 3
+		}
+		if !nbrPos.isOrHasNeighbour(s.UnitGrid, p.myUnit(1)) {
+			bonus += 1
 		}
 
 		if (nbrCell == CellNeutral || p.isEnemyEmptyInactiveCell(nbrCell)) && nbrUnitCell == CellNeutral {
