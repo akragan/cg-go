@@ -896,9 +896,11 @@ func (p *Player) costTrainCapture(cell rune, unitCell rune) int {
 }
 
 func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool) bool {
-	fmt.Fprintf(os.Stderr, "Calculating cheapest win\n")
 
 	p := s.player(playerId)
+	if DebugCostGrid {
+		fmt.Fprintf(os.Stderr, "%s Calculating cheapest win\n", p.Game.Name)
+	}
 	p.CostGrid = make([][]int, GridDim)
 	p.DirGrid = make([][]int, GridDim)
 	for i := 0; i < GridDim; i++ {
@@ -982,7 +984,9 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 	if !execute {
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "Executing cheapest win\n")
+	if DebugCostGrid {
+		fmt.Fprintf(os.Stderr, "%s Executing cheapest win\n", p.Game.Name)
+	}
 	pos = cheapestWinStart
 	cost := pos.getIntCell(p.CostGrid)
 	for i := 0; !pos.sameAs(p.Game.Other.Hq); i++ {
