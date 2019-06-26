@@ -23,7 +23,8 @@ const (
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
-	DebugCostGrid      = true
+	DebugCostGrid      = false
+	DebugCostDirGrid   = false
 
 	//options
 	StandGroundL1 = true
@@ -42,6 +43,7 @@ const (
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
+	EvalUseCheapestWin  = true
 
 	//constants
 	GridDim = 12
@@ -129,6 +131,20 @@ var (
 
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
+
+func direction(dir int) string {
+	switch dir {
+	case DirLeft:
+		return "LEFT"
+	case DirUp:
+		return "UP"
+	case DirRight:
+		return "RIGHT"
+	case DirDown:
+		return "DOWN"
+	}
+	return "<none>"
+}
 
 type PositionQueue []*Position
 
@@ -608,6 +624,28 @@ func (p *Player) myUnit(level int) rune {
 	return CellNeutral
 }
 
+func (p *Player) myUnitLevel(cell rune) int {
+	if p.Id == IdMe {
+		switch cell {
+		case CellMeU:
+			return 1
+		case CellMeU2:
+			return 2
+		case CellMeU3:
+			return 3
+		}
+	}
+	switch cell {
+	case CellOpU:
+		return 1
+	case CellOpU2:
+		return 2
+	case CellOpU3:
+		return 3
+	}
+	return 0
+}
+
 func (p *Player) isMyUnit(unitCell rune) bool {
 	if p.Id == IdMe {
 		return isMyUnitCell(unitCell)
@@ -802,12 +840,48 @@ func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
 	s.calculateChainTrainWin(IdOp, true, false)
 
 	s.calculateCheapestWin(IdMe, moveFirst)
-	s.calculateCheapestWin(IdOp, moveFirst)
+	s.calculateCheapestWin(IdOp, true)
 
 	return won
 }
 
-func (p *Player) costToCapture(cell rune, unitCell rune) int {
+func (p *Player) costMoveOrTrainCapture(moveFirst bool, pos *Position, cell rune, unitCell rune) int {
+	if !moveFirst {
+		return p.costTrainCapture(cell, unitCell)
+	}
+	// check if any active neighbours with my unit - choose the highest level one
+	s := p.State
+	unitLevel := 0
+	unitPos := &Position{}
+	for _, dir := range DirDRUL {
+		nbrPos := pos.neighbour(dir)
+		if nbrPos == nil {
+			continue
+		}
+		cell := nbrPos.getCell(s.Grid)
+		if p.isMyActiveCell(cell) {
+			unitCell := nbrPos.getCell(s.UnitGrid)
+			candidateLevel := p.myUnitLevel(unitCell)
+			if candidateLevel > unitLevel {
+				unitLevel = candidateLevel
+				unitPos = nbrPos
+			}
+		}
+	}
+	// check if cell is capturable by that unit
+	if unitLevel > 0 && p.isCapturable(unitLevel, cell, unitCell) {
+		if DebugCostGrid {
+			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) from (%d,%d) level=%d\n",
+				p.Game.Name, pos.X, pos.Y, unitPos.X, unitPos.Y, unitLevel)
+		}
+		// if yes => cost 0
+		return 0
+	}
+	// otherwise regular costTrainCapture
+	return p.costTrainCapture(cell, unitCell)
+}
+
+func (p *Player) costTrainCapture(cell rune, unitCell rune) int {
 	if p.isMyActiveCell(cell) {
 		return 0
 	}
@@ -829,21 +903,28 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
 		p.CostGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
 		p.DirGrid[i] = []int{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
 	}
+	cheapestWinCost := InfCost
+	cheapestWinStart := &Position{}
 
 	pos := &Position{X: p.Game.Other.Hq.X, Y: p.Game.Other.Hq.Y, Dist: 0}
 	todo := PositionQueue{pos}
 	for !todo.IsEmpty() {
 		todo, pos = todo.TakeFirst()
 		//fmt.Fprintf(os.Stderr, "init DistGrid: (%d,%d):%d, queue size=%d\n", pos.X, pos.Y, pos.Dist, len(todo))
+		prevCost := pos.Dist
+		dir := pos.findNeighbourDir(p.CostGrid, prevCost)
+		if dir == -1 && !pos.sameAs(p.Game.Other.Hq) {
+			// grid has changed, ignore this path
+			continue
+		}
 		cell := pos.getCell(s.Grid)
-		unitCell := pos.getCell(s.UnitGrid)
 		if cell == CellVoid {
 			pos.setIntCell(p.CostGrid, InfCost)
 			pos.setIntCell(p.DirGrid, -1)
 			continue
 		}
-		prevCost := pos.Dist
-		cellCost := p.costToCapture(cell, unitCell)
+		unitCell := pos.getCell(s.UnitGrid)
+		cellCost := p.costMoveOrTrainCapture(moveFirst, pos, cell, unitCell)
 		cost := pos.getIntCell(p.CostGrid)
 		if cost > 0 && cost <= prevCost+cellCost {
 			// already visited before, did not find a cheaper path
@@ -852,8 +933,18 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
 		// not visited or found a cheaper path
 		cost = prevCost + cellCost
 		pos.setIntCell(p.CostGrid, cost)
-		pos.setIntCell(p.DirGrid, pos.findNeighbourDir(p.CostGrid, prevCost))
-		// now revisit neighbours
+		pos.setIntCell(p.DirGrid, dir)
+
+		if p.isMyActiveCell(cell) {
+			// update cheapest path
+			if cheapestWinCost > cost {
+				cheapestWinCost = cost
+				cheapestWinStart = pos
+			}
+			// no need to go further
+			continue
+		}
+		// if not my cell (re)visit neighbours
 		dirs := DirDRUL
 		for _, dir := range dirs {
 			nbrPos := pos.neighbour(dir)
@@ -868,10 +959,15 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
 			}
 		} // for all dirs
 	} // for queue non-empty
+
 	if DebugCostGrid {
 		printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
+	}
+	if DebugCostDirGrid {
 		printIntGrid(fmt.Sprintf("%d: %s DirGrid", g.Turn, p.Game.Name), p.DirGrid)
 	}
+	p.CheapestWinCost = cheapestWinCost
+	p.CheapestWinStart = cheapestWinStart
 }
 
 func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
@@ -903,9 +999,9 @@ func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute boo
 		}
 		if moveFirst && isMyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
 			// first move for free
-			if DebugChainTrainWin {
-				fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
-			}
+			//			if DebugChainTrainWin {
+			fmt.Fprintf(os.Stderr, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
+			//			}
 			// add move command
 			if execute {
 				cmds.appendMove(p.MinDistGoalUnit, fromPos, pos, posDist)
@@ -953,7 +1049,11 @@ func (p *Player) evaluate() {
 	if p.ActualChainTrainWinCost < p.Gold {
 		p.RoundsToHqCapture = 0.0
 	} else if p.expectedIncome() > 0 {
-		p.RoundsToHqCapture = float64(p.ActualChainTrainWinCost-p.Gold) / float64(p.expectedIncome())
+		goldToWin := p.ActualChainTrainWinCost
+		if EvalUseCheapestWin {
+			goldToWin = p.CheapestWinCost
+		}
+		p.RoundsToHqCapture = float64(goldToWin-p.Gold) / float64(p.expectedIncome())
 	}
 
 	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
@@ -1234,6 +1334,12 @@ func (s *State) evaluate(label string) {
 	s.Me.evaluate()
 	s.Op.evaluate()
 
+	fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Me.Game.Name,
+		s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y,
+		s.Me.ActualChainTrainWinCost, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y)
+	fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Op.Game.Name,
+		s.Op.CheapestWinCost, s.Op.CheapestWinStart.X, s.Op.CheapestWinStart.Y,
+		s.Op.ActualChainTrainWinCost, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
 	s.HqCaptureEval = EvalHqCaptureFactor * (s.Op.RoundsToHqCapture - s.Me.RoundsToHqCapture) * (1 - g.DiscountFactor)
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
@@ -1745,6 +1851,7 @@ func randDirs() []int {
 func (s *State) moveUnits(playerId int) {
 	pos := &Position{}
 	p := s.player(playerId)
+	fmt.Fprintf(os.Stderr, "%s Moving Units\n", p.Game.Name)
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
 		if u.Owner != playerId || u.Id == -1 { // -1 for newly trained units that cannot move
@@ -2225,7 +2332,7 @@ func naiveAlgo(s *State) *State {
 	if len(s2.Commands) > 0 {
 		s2.calculateActiveAreas()
 	}
-	won := s2.calculateChainTrainWins(false, true)
+	won := s2.calculateChainTrainWins(true, false)
 	if won {
 		s2.Commands = append(s.Commands, s2.Commands...)
 		s = s2
