@@ -24,7 +24,7 @@ const (
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
-	DebugCostGrid      = true
+	DebugCostGrid      = false
 	DebugCostDirGrid   = false
 	DebugEval          = false
 
@@ -965,7 +965,7 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 	} // for queue non-empty
 
 	if DebugCostGrid {
-		printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
+		//printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
 	}
 	if DebugCostDirGrid {
 		printIntGrid(fmt.Sprintf("%d: %s DirGrid", g.Turn, p.Game.Name), p.DirGrid)
@@ -987,30 +987,41 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 	if DebugCostGrid {
 		fmt.Fprintf(os.Stderr, "%s Executing cheapest win\n", p.Game.Name)
 	}
-	pos = cheapestWinStart
+	pos = cheapestWinStart.neighbour(cheapestWinStart.getIntCell(p.DirGrid))
+	dir := pos.getIntCell(p.DirGrid)
 	cost := pos.getIntCell(p.CostGrid)
-	for i := 0; !pos.sameAs(p.Game.Other.Hq); i++ {
-		dir := pos.getIntCell(p.DirGrid)
-		nextPos := pos.neighbour(dir)
-		nextCost := nextPos.getIntCell(p.CostGrid)
-		moveCost := nextCost - cost
+	nextPos := pos
+	nextCost := cost
+	moveCost := 0
+	for i := 0; ; i++ {
+		if !pos.sameAs(p.Other.Game.Hq) {
+			nextPos = pos.neighbour(dir)
+			nextCost = nextPos.getIntCell(p.CostGrid)
+			dir = nextPos.getIntCell(p.DirGrid)
+		} else {
+			nextCost = 0
+		}
+		moveCost = cost - nextCost
 		if i == 0 && moveCost == 0 { //move command
-			unit := s.unitAt(pos)
+			unit := s.unitAt(cheapestWinStart)
 			if unit == nil {
 				return false
 			}
-			s.addMove(p.Id, unit, pos, nextPos)
+			s.addMove(p.Id, unit, cheapestWinStart, pos)
 			if DebugCostGrid {
-				fmt.Fprintf(os.Stderr, "\t%d: move %d to (%d,%d)\n", i, unit.Id, nextPos.X, nextPos.Y)
+				fmt.Fprintf(os.Stderr, "\t%d: move %d to (%d,%d)\n", i, unit.Id, pos.X, pos.Y)
 			}
 		} else {
 			level := levelTrain(moveCost)
-			s.addTrain(p.Id, nextPos, level)
+			s.addTrain(p.Id, pos, level)
 			if DebugCostGrid {
-				fmt.Fprintf(os.Stderr, "\t%d: level %d at (%d,%d)\n", i, level, nextPos.X, nextPos.Y)
+				fmt.Fprintf(os.Stderr, "\t%d: level %d at (%d,%d)\n", i, level, pos.X, pos.Y)
 			}
 		}
-		//next pos
+		//next pos or quit
+		if pos.sameAs(p.Other.Game.Hq) {
+			break
+		}
 		pos = nextPos
 		cost = nextCost
 	}
