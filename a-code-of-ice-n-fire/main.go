@@ -24,7 +24,7 @@ const (
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
-	DebugCostGrid      = false
+	DebugCostGrid      = true
 	DebugCostDirGrid   = false
 	DebugEval          = false
 
@@ -834,7 +834,7 @@ func (p *Player) isEnemyActiveCell(cell rune) bool {
 	return isMyActiveCell(cell)
 }
 
-func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
+func (s *State) calculateCheapestWins(moveFirst bool, execute bool) bool {
 	won := false
 	if EvalUseCheapestWin {
 		won = s.calculateCheapestWin(IdMe, moveFirst, execute)
@@ -992,7 +992,7 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 	for i := 0; !pos.sameAs(p.Game.Other.Hq); i++ {
 		dir := pos.getIntCell(p.DirGrid)
 		nextPos := pos.neighbour(dir)
-		nextCost := pos.getIntCell(p.CostGrid)
+		nextCost := nextPos.getIntCell(p.CostGrid)
 		moveCost := nextCost - cost
 		if i == 0 && moveCost == 0 { //move command
 			unit := s.unitAt(pos)
@@ -1000,13 +1000,13 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 				return false
 			}
 			s.addMove(p.Id, unit, pos, nextPos)
-			if DebugChainTrainWin {
+			if DebugCostGrid {
 				fmt.Fprintf(os.Stderr, "\t%d: move %d to (%d,%d)\n", i, unit.Id, nextPos.X, nextPos.Y)
 			}
 		} else {
 			level := levelTrain(moveCost)
 			s.addTrain(p.Id, nextPos, level)
-			if DebugChainTrainWin {
+			if DebugCostGrid {
 				fmt.Fprintf(os.Stderr, "\t%d: level %d at (%d,%d)\n", i, level, nextPos.X, nextPos.Y)
 			}
 		}
@@ -2227,7 +2227,7 @@ func (s *State) trainUnits(playerId int) *State {
 				s2.moveUnits(p2.Other.Id)
 				// evaluate after each TRAIN cmd (and opponent move)
 				s2.calculateActiveAreas()
-				s2.calculateChainTrainWins(true, false)
+				s2.calculateCheapestWins(true, false)
 				s2.evaluate("AFTER TRAIN and opponent move")
 
 				fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
@@ -2373,7 +2373,7 @@ func naiveAlgo(s *State) *State {
 	eval := s.Eval
 	s2 := s.deepCopy()
 	s2.moveUnits(IdOp)
-	s2.calculateChainTrainWins(true, false)
+	s2.calculateCheapestWins(true, false)
 	s2.evaluate("DO NOTHING scenario")
 	fmt.Fprintf(os.Stderr, "%d: DO NOTHING eval change: %.1f\n", g.Turn, s2.Eval-eval)
 	eval = s2.Eval
@@ -2384,7 +2384,7 @@ func naiveAlgo(s *State) *State {
 	s2.moveUnits(IdOp)
 	// evaluate after BUILD cmds - no change to active areas
 	if len(s2.Commands) > 0 {
-		s2.calculateChainTrainWins(true, false)
+		s2.calculateCheapestWins(true, false)
 		s2.evaluate("AFTER BUILD")
 		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s2.Eval-eval)
 		if s2.Eval >= eval {
@@ -2404,7 +2404,7 @@ func naiveAlgo(s *State) *State {
 	if len(s2.Commands) > 0 {
 		s2.calculateActiveAreas()
 	}
-	won := s2.calculateChainTrainWins(true, false)
+	won := s2.calculateCheapestWins(true, false)
 	if won {
 		s2.Commands = append(s.Commands, s2.Commands...)
 		s = s2
@@ -2442,11 +2442,7 @@ func main() {
 		// check forced win on new turn before any scenarios
 		won := false
 		fmt.Fprintf(os.Stderr, "TURN %d ----------------------------------------\n", g.Turn)
-		if EvalUseCheapestWin {
-			won = s.calculateCheapestWin(IdMe, true, true)
-		} else {
-			won = s.calculateChainTrainWins(true, true)
-		}
+		won = s.calculateCheapestWins(true, true)
 		if !won {
 			s.evaluate("NEW TURN")
 			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
