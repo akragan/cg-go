@@ -20,11 +20,13 @@ const (
 	DebugActiveArea    = false
 	DebugCapturable    = false
 	DebugNeutral       = false
+	DebugMove          = false
 	DebugTrain         = false
 	DebugBuildTower    = false
 	DebugDistGrid      = false
 	DebugCostGrid      = false
 	DebugCostDirGrid   = false
+	DebugEval          = false
 
 	//options
 	StandGroundL1 = true
@@ -39,7 +41,7 @@ const (
 	RandomDirsAtInitDistGrid        = false
 	AbortTrainCmdsOnNegativeEvalChg = true
 	TrainNegativeEvalPainTolerance  = -25.0
-	NbEvaluatedTrainCandidates      = 50
+	NbEvaluatedTrainCandidates      = 2
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
@@ -836,12 +838,14 @@ func (p *Player) isEnemyActiveCell(cell rune) bool {
 }
 
 func (s *State) calculateChainTrainWins(moveFirst bool, execute bool) bool {
-	won := s.calculateChainTrainWin(IdMe, moveFirst, execute)
-	s.calculateChainTrainWin(IdOp, true, false)
-
-	s.calculateCheapestWin(IdMe, moveFirst)
-	s.calculateCheapestWin(IdOp, true)
-
+	won := false
+	if EvalUseCheapestWin {
+		won = s.calculateCheapestWin(IdMe, moveFirst, execute)
+		s.calculateCheapestWin(IdOp, true, false)
+	} else {
+		won = s.calculateChainTrainWin(IdMe, moveFirst, execute)
+		s.calculateChainTrainWin(IdOp, true, false)
+	}
 	return won
 }
 
@@ -894,7 +898,8 @@ func (p *Player) costTrainCapture(cell rune, unitCell rune) int {
 	return CostTrain1
 }
 
-func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
+func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool) bool {
+	fmt.Fprintf(os.Stderr, "Calculating cheapest win\n")
 
 	p := s.player(playerId)
 	p.CostGrid = make([][]int, GridDim)
@@ -968,6 +973,47 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool) {
 	}
 	p.CheapestWinCost = cheapestWinCost
 	p.CheapestWinStart = cheapestWinStart
+	if p.Gold < p.CheapestWinCost {
+		if DebugCostGrid {
+			fmt.Fprintf(os.Stderr, "\t[%s] Abort: Gold=%d CheapestWin=%d\n", p.Game.Name, p.Gold, cheapestWinCost)
+		}
+		return false
+	}
+	if DebugCostGrid {
+		fmt.Fprintf(os.Stderr, "\t[%s] Proceed: Gold=%d CheapestWin=%d\n", p.Game.Name, p.Gold, cheapestWinCost)
+	}
+	if !execute {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "Executing cheapest win\n")
+	pos = cheapestWinStart
+	cost := pos.getIntCell(p.CostGrid)
+	for i := 0; !pos.sameAs(p.Game.Other.Hq); i++ {
+		dir := pos.getIntCell(p.DirGrid)
+		nextPos := pos.neighbour(dir)
+		nextCost := pos.getIntCell(p.CostGrid)
+		moveCost := nextCost - cost
+		if i == 0 && moveCost == 0 { //move command
+			unit := s.unitAt(pos)
+			if unit == nil {
+				return false
+			}
+			s.addMove(p.Id, unit, pos, nextPos)
+			if DebugChainTrainWin {
+				fmt.Fprintf(os.Stderr, "\t%d: move %d to (%d,%d)\n", i, unit.Id, nextPos.X, nextPos.Y)
+			}
+		} else {
+			level := levelTrain(moveCost)
+			s.addTrain(p.Id, nextPos, level)
+			if DebugChainTrainWin {
+				fmt.Fprintf(os.Stderr, "\t%d: level %d at (%d,%d)\n", i, level, nextPos.X, nextPos.Y)
+			}
+		}
+		//next pos
+		pos = nextPos
+		cost = nextCost
+	}
+	return true
 }
 
 func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
@@ -1334,19 +1380,23 @@ func (s *State) evaluate(label string) {
 	s.Me.evaluate()
 	s.Op.evaluate()
 
-	fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Me.Game.Name,
-		s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y,
-		s.Me.ActualChainTrainWinCost, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y)
-	fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Op.Game.Name,
-		s.Op.CheapestWinCost, s.Op.CheapestWinStart.X, s.Op.CheapestWinStart.Y,
-		s.Op.ActualChainTrainWinCost, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+	if DebugCostGrid || DebugTrain {
+		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Me.Game.Name,
+			s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y,
+			s.Me.ActualChainTrainWinCost, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y)
+		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Op.Game.Name,
+			s.Op.CheapestWinCost, s.Op.CheapestWinStart.X, s.Op.CheapestWinStart.Y,
+			s.Op.ActualChainTrainWinCost, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+	}
 	s.HqCaptureEval = EvalHqCaptureFactor * (s.Op.RoundsToHqCapture - s.Me.RoundsToHqCapture) * (1 - g.DiscountFactor)
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f MeIncome=%d->%d OpIncome=%d->%d\n",
-		s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture, s.Me.income(), s.Me.expectedIncome(), s.Op.income(), s.Op.expectedIncome())
-	fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	if DebugEval {
+		fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f MeIncome=%d->%d OpIncome=%d->%d\n",
+			s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture, s.Me.income(), s.Me.expectedIncome(), s.Op.income(), s.Op.expectedIncome())
+		fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
+	}
 	fmt.Fprintf(os.Stderr, "%d: eval=%.1f\t(df=%.2f)\n", g.Turn, s.Eval, g.DiscountFactor)
 }
 
@@ -1848,10 +1898,22 @@ func randDirs() []int {
 //---------------------------------------------------------------------------------------
 //---------------------------------------------------------------------------------------
 
+func (s *State) unitAt(pos *Position) *Unit {
+	for i := 0; i < s.NbUnits; i++ {
+		u := s.Units[i]
+		if u.Pos().sameAs(pos) {
+			return u
+		}
+	}
+	return nil
+}
+
 func (s *State) moveUnits(playerId int) {
 	pos := &Position{}
 	p := s.player(playerId)
-	fmt.Fprintf(os.Stderr, "%s Moving Units\n", p.Game.Name)
+	if DebugMove {
+		fmt.Fprintf(os.Stderr, "\t%s Moving Units\n", p.Game.Name)
+	}
 	for i := 0; i < s.NbUnits; i++ {
 		u := s.Units[i]
 		if u.Owner != playerId || u.Id == -1 { // -1 for newly trained units that cannot move
@@ -2145,7 +2207,6 @@ func (s *State) trainUnits(playerId int) *State {
 
 	if candidateCmds == nil {
 		fmt.Fprintf(os.Stderr, "%d: No TRAIN candidates\n", g.Turn)
-
 	} else {
 		fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
 		for i, cmd := range candidateCmds.Candidates {
@@ -2201,6 +2262,16 @@ func costTrain(level int) int {
 		return CostTrain3
 	}
 	return CostTrain1
+}
+
+func levelTrain(cost int) int {
+	switch cost {
+	case CostTrain2:
+		return 2
+	case CostTrain3:
+		return 3
+	}
+	return 1
 }
 
 //---------------------------------------------------------------------------------------
@@ -2368,7 +2439,13 @@ func main() {
 		g.RespTime = time.Now()
 
 		// check forced win on new turn before any scenarios
-		won := s.calculateChainTrainWins(true, true)
+		won := false
+		fmt.Fprintf(os.Stderr, "TURN %d ----------------------------------------\n", g.Turn)
+		if EvalUseCheapestWin {
+			won = s.calculateCheapestWin(IdMe, true, true)
+		} else {
+			won = s.calculateChainTrainWins(true, true)
+		}
 		if !won {
 			s.evaluate("NEW TURN")
 			fmt.Fprintf(os.Stderr, "%d: Full turn eval change: %.1f\n", g.Turn, s.Eval-g.Eval)
