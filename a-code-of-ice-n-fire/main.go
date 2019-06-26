@@ -35,13 +35,10 @@ const (
 	SortUnitsAsc = true
 
 	MaxTowers = 1
-	Min1      = 3
 
-	MoveBackwards                   = false
-	RandomDirsAtInitDistGrid        = false
-	AbortTrainCmdsOnNegativeEvalChg = true
-	TrainNegativeEvalPainTolerance  = -25.0
-	NbEvaluatedTrainCandidates      = 100
+	MoveBackwards              = false
+	RandomDirsAtInitDistGrid   = false
+	NbEvaluatedTrainCandidates = 100
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
