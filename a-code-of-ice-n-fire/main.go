@@ -26,7 +26,7 @@ const (
 	DebugDistGrid      = false
 	DebugCostGrid      = false
 	DebugCostDirGrid   = false
-	DebugEval          = false
+	DebugEval          = true
 
 	//options
 	StandGroundL1 = true
@@ -2229,50 +2229,46 @@ func (s *State) trainUnits(playerId int) *State {
 
 	if candidateCmds == nil {
 		fmt.Fprintf(os.Stderr, "%d: No TRAIN candidates\n", g.Turn)
-	} else {
-		fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
-		for i, cmd := range candidateCmds.Candidates {
-			if cmd.Level == 0 {
-				//de-duped
+		return s
+	}
+
+	fmt.Fprintf(os.Stderr, "%d: %d TRAIN candidates\n", g.Turn, len(candidateCmds.Candidates))
+	for i, cmd := range candidateCmds.Candidates {
+		if cmd.Level == 0 {
+			//de-duped
+			continue
+		}
+		p = s.player(playerId)
+		cost := costTrain(cmd.Level)
+		fmt.Fprintf(os.Stderr, "%d: %dth TRAIN candidate: value %d, level %d at (%d,%d)\n", g.Turn, i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
+		fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
+		if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
+			eval := s.Eval
+			s2 := s.deepCopy()
+			p2 := s2.player(playerId)
+			s2.addTrain(p2.Id, cmd.To, cmd.Level)
+			s2.moveUnits(p2.Other.Id)
+			// evaluate after each TRAIN cmd (and opponent move)
+			s2.calculateActiveAreas()
+			s2.calculateCheapestWins(true, false)
+			s2.evaluate("AFTER TRAIN and opponent move")
+
+			fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
+			if s2.Eval < eval {
+				fmt.Fprintf(os.Stderr, "\tskipping TRAIN command\n")
 				continue
 			}
-			p = s.player(playerId)
-			cost := costTrain(cmd.Level)
-			fmt.Fprintf(os.Stderr, "%d: %dth TRAIN candidate: value %d, level %d at (%d,%d)\n", g.Turn, i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-			fmt.Fprintf(os.Stderr, "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
-			if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
-				eval := s.Eval
-				s2 := s.deepCopy()
-				p2 := s2.player(playerId)
-				s2.addTrain(p2.Id, cmd.To, cmd.Level)
-				s2.moveUnits(p2.Other.Id)
-				// evaluate after each TRAIN cmd (and opponent move)
-				s2.calculateActiveAreas()
-				s2.calculateCheapestWins(true, false)
-				s2.evaluate("AFTER TRAIN and opponent move")
-
-				fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
-				if s2.Eval >= eval {
-					eval = s2.Eval
-					fmt.Fprintf(os.Stderr, "\t%s: appending TRAIN command, my gold=%d\n", p2.Game.Name, p2.Gold)
-					if p2.Id == IdMe {
-						s2.Commands = append(s.Commands, s2.Commands...)
-					}
-					s = s2
-				} else {
-					fmt.Fprintf(os.Stderr, "\tskipping TRAIN command\n")
-				}
-
-			} else {
-				if DebugTrain && i < 10 {
-					fmt.Fprintf(os.Stderr, "\tSkipping %d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-				} else {
-					fmt.Fprintf(os.Stderr, "\tSkipping %d candidates...\n", len(candidateCmds.Candidates)-i)
-					break
-				}
+			eval = s2.Eval
+			fmt.Fprintf(os.Stderr, "\t%s: appending TRAIN command, my gold=%d\n", p2.Game.Name, p2.Gold)
+			if p2.Id == IdMe {
+				s2.Commands = append(s.Commands, s2.Commands...)
 			}
+			s = s2
+		} else {
+			fmt.Fprintf(os.Stderr, "\tSkipping %d candidates...\n", len(candidateCmds.Candidates)-i)
+			break
 		}
-	}
+	} //for all candidates
 	return s
 }
 
