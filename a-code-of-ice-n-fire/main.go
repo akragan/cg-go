@@ -22,7 +22,7 @@ const (
 	DebugNeutral       = false
 	DebugMove          = false
 	DebugTrain         = false
-	DebugBuildTower    = true
+	DebugBuildTower    = false
 	DebugDistGrid      = false
 	DebugCostGrid      = false
 	DebugCostDirGrid   = false
