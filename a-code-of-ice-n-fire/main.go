@@ -34,7 +34,7 @@ const (
 
 	SortUnitsAsc = true
 
-	MaxTowers = 4
+	MaxTowers = 10
 
 	MoveBackwards              = false
 	RandomDirsAtInitDistGrid   = false
