@@ -22,7 +22,7 @@ const (
 	DebugNeutral       = false
 	DebugMove          = false
 	DebugTrain         = false
-	DebugBuildTower    = false
+	DebugBuildTower    = true
 	DebugDistGrid      = false
 	DebugCostGrid      = false
 	DebugCostDirGrid   = false
@@ -34,7 +34,7 @@ const (
 
 	SortUnitsAsc = true
 
-	MaxTowers = 1
+	MaxTowers = 4
 
 	MoveBackwards              = false
 	RandomDirsAtInitDistGrid   = false
@@ -493,9 +493,15 @@ func (p *Player) deepCopy() *Player {
 
 		MinChainTrainWinCost:    p.MinChainTrainWinCost,
 		ActualChainTrainWinCost: p.ActualChainTrainWinCost,
-		RoundsToHqCapture:       p.RoundsToHqCapture,
-		MilitaryPower:           p.MilitaryPower,
-		ExpectedMilitaryPower:   p.ExpectedMilitaryPower,
+
+		CheapestWinCost:  p.CheapestWinCost,
+		CheapestWinStart: p.CheapestWinStart, // readonly, shouldn't need to deepCopy
+		CostGrid:         p.CostGrid,         // readonly, shouldn't need to deepCopy
+		DirGrid:          p.DirGrid,          // readonly, shouldn't need to deepCopy
+
+		RoundsToHqCapture:     p.RoundsToHqCapture,
+		MilitaryPower:         p.MilitaryPower,
+		ExpectedMilitaryPower: p.ExpectedMilitaryPower,
 	}
 }
 
@@ -1424,6 +1430,17 @@ func copyGrid(grid [][]rune) [][]rune {
 	return grid2
 }
 
+func copyIntGrid(grid [][]int) [][]int {
+	grid2 := make([][]int, GridDim)
+	for i := 0; i < GridDim; i++ {
+		grid2[i] = make([]int, GridDim)
+		for j := 0; j < GridDim; j++ {
+			grid2[i][j] = grid[i][j]
+		}
+	}
+	return grid2
+}
+
 func copyBuildings(b []*Building) []*Building {
 	n := len(b)
 	b2 := make([]*Building, n)
@@ -2297,8 +2314,11 @@ func levelTrain(cost int) int {
 //---------------------------------------------------------------------------------------
 
 func (s *State) findTowerSpotBeyondDist2(playerId int, pos *Position) *Position {
+	if pos == nil {
+		return nil
+	}
 	p := s.player(playerId)
-	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
+	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Other.DirGrid)) {
 		cell := pos.getCell(s.Grid)
 		unitCell := pos.getCell(s.UnitGrid)
 		mineCell := pos.getCell(g.MineGrid)
@@ -2323,6 +2343,9 @@ func (s *State) findTowerSpotBeyondDist2(playerId int, pos *Position) *Position 
 }
 
 func (s *State) findTowerSpotBeyondDist1(playerId int, pos *Position) *Position {
+	if pos == nil {
+		return nil
+	}
 	p := s.player(playerId)
 	for ; !pos.sameAs(p.Game.Hq); pos = pos.neighbour(pos.getIntCell(p.Game.Other.DirGrid)) {
 		cell := pos.getCell(s.Grid)
@@ -2368,17 +2391,19 @@ func (s *State) buildMinesAndTowers(playerId int) {
 		if p.isMyEmptyActiveCell(cell) && unitCell == CellNeutral {
 			fmt.Fprintf(os.Stderr, "%d: Build HQ tower\n", g.Turn)
 			s.addBuildTower(playerId, spot)
-		} else if spot = s.findTowerSpotBeyondDist2(playerId, p.Other.MinDistGoal); spot != nil {
+		} else if p.NbTowers == 0 {
+			//do nothing else
+		} else if spot = s.findTowerSpotBeyondDist2(playerId, p.Other.CheapestWinStart); spot != nil {
 			// build towers on Op ChainTrainWin path
 			s.addBuildTower(playerId, spot)
-		} else {
+		} else if p.NbTowers > 0 {
 			if DebugBuildTower {
-				fmt.Fprintf(os.Stderr, "\tCouldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+				fmt.Fprintf(os.Stderr, "\tCouldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.CheapestWinStart.X, p.Other.CheapestWinStart.Y)
 			}
-			if spot = s.findTowerSpotBeyondDist1(playerId, p.Other.MinDistGoal); spot != nil {
+			if spot = s.findTowerSpotBeyondDist1(playerId, p.Other.CheapestWinStart); spot != nil {
 				s.addBuildTower(playerId, spot)
 			} else if DebugBuildTower {
-				fmt.Fprintf(os.Stderr, "\tCouldn't find any tower spot starting at (%d,%d)\n", p.Other.MinDistGoal.X, p.Other.MinDistGoal.Y)
+				fmt.Fprintf(os.Stderr, "\tCouldn't find any tower spot starting at (%d,%d)\n", p.Other.CheapestWinStart.X, p.Other.CheapestWinStart.Y)
 			}
 		}
 	}
