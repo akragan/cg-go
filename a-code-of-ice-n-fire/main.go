@@ -16,7 +16,7 @@ const (
 	AlgoMinMax = 1
 
 	// debug
-	DebugChainTrainWin = false
+	DebugEval          = true
 	DebugActiveArea    = false
 	DebugCapturable    = false
 	DebugNeutral       = false
@@ -26,7 +26,7 @@ const (
 	DebugDistGrid      = false
 	DebugCostGrid      = false
 	DebugCostDirGrid   = false
-	DebugEval          = true
+	DebugChainTrainWin = false
 
 	//options
 	StandGroundL1 = true
@@ -43,6 +43,7 @@ const (
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
 	EvalUseCheapestWin  = true
+	EvalTolerance       = 25.0
 
 	//constants
 	GridDim = 12
@@ -2254,7 +2255,7 @@ func (s *State) trainUnits(playerId int) *State {
 			s2.evaluate("AFTER TRAIN and opponent move")
 
 			fmt.Fprintf(os.Stderr, "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
-			if s2.Eval < eval {
+			if s2.Eval-eval < -EvalTolerance {
 				fmt.Fprintf(os.Stderr, "\tskipping TRAIN command\n")
 				continue
 			}
@@ -2404,7 +2405,7 @@ func naiveAlgo(s *State) *State {
 		s2.calculateCheapestWins(true, false)
 		s2.evaluate("AFTER BUILD")
 		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s2.Eval-eval)
-		if s2.Eval >= eval {
+		if s2.Eval-eval > -EvalTolerance {
 			eval = s2.Eval
 			fmt.Fprintf(os.Stderr, "\tappending BUILD commands\n")
 			s2.Commands = append(s.Commands, s2.Commands...)
@@ -2429,7 +2430,7 @@ func naiveAlgo(s *State) *State {
 		if len(s2.Commands) > 0 {
 			s2.evaluate("AFTER MOVE")
 			fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s2.Eval-eval)
-			if s2.Eval >= eval {
+			if s2.Eval-eval > -EvalTolerance {
 				eval = s2.Eval
 				fmt.Fprintf(os.Stderr, "\tappending MOVE commands\n")
 				s2.Commands = append(s.Commands, s2.Commands...)
