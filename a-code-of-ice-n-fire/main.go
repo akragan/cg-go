@@ -38,7 +38,7 @@ const (
 
 	MoveBackwards              = false
 	RandomDirsAtInitDistGrid   = false
-	NbEvaluatedTrainCandidates = 100
+	NbEvaluatedTrainCandidates = 10
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
