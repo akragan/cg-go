@@ -886,7 +886,7 @@ func (p *Player) costTrainCapture(cell rune, unitCell rune) int {
 	if p.isMyActiveCell(cell) {
 		return 0
 	}
-	if p.isEnemyProtectedAny(cell) || p.isEnemyUnitLevel2or3(cell) {
+	if p.isEnemyProtectedAny(cell) || p.isEnemyUnitLevel2or3(unitCell) {
 		return CostTrain3
 	}
 	if p.isEnemyUnitLevel1(unitCell) {
@@ -964,8 +964,8 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 		} // for all dirs
 	} // for queue non-empty
 
-	if DebugCostGrid {
-		//printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
+	if DebugCostGrid && p.Id == IdMe {
+		printIntGrid(fmt.Sprintf("%d: %s CostGrid", g.Turn, p.Game.Name), p.CostGrid)
 	}
 	if DebugCostDirGrid {
 		printIntGrid(fmt.Sprintf("%d: %s DirGrid", g.Turn, p.Game.Name), p.DirGrid)
@@ -1809,6 +1809,16 @@ func (this *CommandSelector) best() *CandidateCommand {
 		return nil
 	}
 	this.sort()
+	bestValue := this.Candidates[0].Value
+	n := 1
+	for ; n < len(this.Candidates); n++ {
+		if this.Candidates[n].Value < bestValue {
+			break
+		}
+	}
+	if n > 1 {
+		return this.Candidates[rand.Intn(n)]
+	}
 	return this.Candidates[0]
 }
 
