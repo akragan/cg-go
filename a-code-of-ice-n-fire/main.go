@@ -20,11 +20,12 @@ const (
 	//CurrentAlgo = AlgoNaive
 
 	SimMaxDepth                = 1
-	NbEvaluatedTrainCandidates = 2
+	NbEvaluatedTrainCandidates = 10
 	OpTrain                    = true
 
 	// debug
 	DebugEval          = false
+	DebugEvalDetail    = false
 	DebugActiveArea    = false
 	DebugCapturable    = false
 	DebugNeutral       = false
@@ -37,7 +38,7 @@ const (
 	DebugCostDirGrid   = false
 	DebugChainTrainWin = false
 	DebugOp            = false
-	DebugSim           = true
+	DebugSim           = false
 
 	//options
 	StandGroundL1 = true
@@ -49,6 +50,7 @@ const (
 
 	MoveBackwards            = false
 	RandomDirsAtInitDistGrid = false
+	RandBestMove             = false
 
 	EvalDiscountRate    = 5.0
 	EvalHqCaptureFactor = 100.0
@@ -547,7 +549,7 @@ func (p *Player) addActiveArea(pos *Position) {
 	if dist < p.MinDistGoal.Dist {
 		p.MinDistGoal.set(pos.X, pos.Y).Dist = dist
 	}
-	debug(DebugActiveArea, "\t\t%s active area (%d) - added (%d,%d)\n", p.Game.Name, p.ActiveArea, pos.X, pos.Y)
+	debug(DebugActiveArea && (p.Id == IdMe || DebugOp), "\t\t%s active area (%d) - added (%d,%d)\n", p.Game.Name, p.ActiveArea, pos.X, pos.Y)
 }
 
 func (p *Player) activate(cell rune) rune {
@@ -1133,7 +1135,7 @@ func (s *State) calculateActiveAreas() {
 }
 
 func (p *Player) recalculateActiveArea() {
-	debug(DebugActiveArea, "\t\t%s recalculating active area (%d)\n", p.Game.Name, p.ActiveArea)
+	debug(DebugActiveArea && (p.Id == IdMe || DebugOp), "\t\t%s recalculating active area (%d)\n", p.Game.Name, p.ActiveArea)
 
 	activeCells := make([][]rune, GridDim)
 	for i := 0; i < GridDim; i++ {
@@ -1152,7 +1154,7 @@ func (p *Player) recalculateActiveArea() {
 		if p.isMyActiveCell(cell) {
 			activeArea += 1
 			pos.setCell(activeCells, CellMine)
-			debug(DebugActiveArea, "\t\t%s: %d active cells (%d,%d)\n", p.Game.Name, activeArea, pos.X, pos.Y)
+			debug(DebugActiveArea && (p.Id == IdMe || DebugOp), "\t\t%s: %d active cells (%d,%d)\n", p.Game.Name, activeArea, pos.X, pos.Y)
 		} else {
 			pos.setCell(activeCells, CellVoid)
 		}
@@ -1166,12 +1168,12 @@ func (p *Player) recalculateActiveArea() {
 	}
 	activeAreaChg := activeArea - p.ActiveArea
 	if activeAreaChg != 0 {
-		debug(DebugActiveArea, "\t\t%s: active area changed by %d (from %d to %d)\n", p.Game.Name, activeAreaChg, p.ActiveArea, activeArea)
+		debug(DebugActiveArea && (p.Id == IdMe || DebugOp), "\t\t%s: active area changed by %d (from %d to %d)\n", p.Game.Name, activeAreaChg, p.ActiveArea, activeArea)
 		//p.ActiveArea = activeArea
 		//TODO update active area
 		//p.updateActive(activeCells)
 	} else {
-		debug(DebugActiveArea, "\t\t%s active area unchanged (%d)\n", p.Game.Name, p.ActiveArea)
+		debug(DebugActiveArea && (p.Id == IdMe || DebugOp), "\t\t%s active area unchanged (%d)\n", p.Game.Name, p.ActiveArea)
 	}
 }
 
@@ -1331,6 +1333,7 @@ type State struct {
 	Buildings   []*Building
 	NbUnits     int
 	Units       []*Unit
+	MaxUnitId   int
 	UnitGrid    [][]rune
 	// state eval
 	MilitaryPowerEval float64
@@ -1357,6 +1360,7 @@ func (s *State) deepCopy() *State {
 		Buildings:   copyBuildings(s.Buildings),
 		NbUnits:     s.NbUnits,
 		Units:       copyUnits(s.Units),
+		MaxUnitId:   s.MaxUnitId,
 		UnitGrid:    copyGrid(s.UnitGrid),
 
 		MilitaryPowerEval: s.MilitaryPowerEval,
@@ -1386,14 +1390,15 @@ func (s *State) player(id int) *Player {
 	return s.Op
 }
 
-func (s *State) evaluate(label string) {
-	if label != "" && DebugEval {
-		fmt.Fprintf(os.Stderr, "%d: evaluating state %s\n\tCommands: %s\n", g.Turn, label, commandsToString(s.Commands))
+func (s *State) evaluate(label string, enableDebug bool) {
+	if enableDebug && label != "" && DebugEval {
+		fmt.Fprintf(os.Stderr, "%d: evaluating state %s\n", g.Turn, label)
+		debug(DebugEvalDetail, "\tCommands: %s\n", commandsToString(s.Commands))
 	}
 	s.Me.evaluate()
 	s.Op.evaluate()
 
-	if DebugCostGrid || DebugChainTrainWin {
+	if enableDebug && (DebugEvalDetail || DebugCostGrid || DebugChainTrainWin) {
 		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Me.Game.Name,
 			s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y,
 			s.Me.ActualChainTrainWinCost, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y)
@@ -1405,12 +1410,12 @@ func (s *State) evaluate(label string) {
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
 	s.Eval = s.HqCaptureEval + s.MilitaryPowerEval
 
-	if DebugEval {
+	if enableDebug && DebugEvalDetail {
 		fmt.Fprintf(os.Stderr, "\tHQ capture eval=%.1f\tMeTurnsToHQ=%.1f OpTurnsToHQ=%.1f MeIncome=%d->%d OpIncome=%d->%d\n",
 			s.HqCaptureEval, s.Me.RoundsToHqCapture, s.Op.RoundsToHqCapture, s.Me.income(), s.Me.expectedIncome(), s.Op.income(), s.Op.expectedIncome())
 		fmt.Fprintf(os.Stderr, "\tmilitary eval=%.1f\tMeExMP=%v OpExMP=%v\n", s.MilitaryPowerEval, s.Me.ExpectedMilitaryPower, s.Op.ExpectedMilitaryPower)
 	}
-	debug(DebugEval, "%d: eval=%.1f\t(df=%.2f)\n", g.Turn, s.Eval, g.DiscountFactor)
+	debug(enableDebug && DebugEval, "%d: eval=%.1f\t(df=%.2f)\n", g.Turn, s.Eval, g.DiscountFactor)
 }
 
 func copyGrid(grid [][]rune) [][]rune {
@@ -1653,10 +1658,14 @@ func (s *State) init() {
 
 	fmt.Scan(&s.NbUnits)
 	s.Units = make([]*Unit, s.NbUnits)
+	s.MaxUnitId = -1
 	for i := 0; i < s.NbUnits; i++ {
 		u := &Unit{}
 		fmt.Scan(&u.Owner, &u.Id, &u.Level, &u.X, &u.Y)
 		s.Units[i] = u
+		if u.Id > s.MaxUnitId {
+			s.MaxUnitId = u.Id
+		}
 	}
 	s.applyUnits()
 	// sort units from l1 to l3 (l1 will move first)
@@ -1823,6 +1832,10 @@ func (this *CommandSelector) best() *CandidateCommand {
 		return nil
 	}
 	this.sort()
+	if !RandBestMove {
+		return this.Candidates[0]
+	}
+
 	bestValue := this.Candidates[0].Value
 	n := 1
 	for ; n < len(this.Candidates); n++ {
@@ -2279,7 +2292,7 @@ func (s *State) trainUnits(playerId int, l1 bool, l23 bool, evalOnly bool) *Stat
 			//evaluate
 			s2.calculateActiveAreas()
 			s2.calculateCheapestWins(true, false)
-			s2.evaluate("AFTER TRAIN")
+			s2.evaluate(fmt.Sprintf("AFTER TRAIN: %s, eval only=%v", p2.Game.Name, evalOnly), p2.Id == IdMe || DebugOp)
 			debug(debugTrain(playerId), "\t%d: TRAIN eval change: %.1f\n", g.Turn, s2.Eval-eval)
 
 			if s2.Eval-eval < -EvalTolerance {
@@ -2421,7 +2434,7 @@ func naiveAlgo(s *State) *State {
 	}
 	s2.calculateActiveAreas()
 	s2.calculateCheapestWins(true, false)
-	s2.evaluate("DO NOTHING scenario")
+	s2.evaluate("DO NOTHING scenario", true)
 	fmt.Fprintf(os.Stderr, "%d: DO NOTHING eval change: %.1f\n", g.Turn, s2.Eval-eval)
 	eval = s2.Eval
 
@@ -2436,7 +2449,7 @@ func naiveAlgo(s *State) *State {
 	if len(s2.Commands) > 0 {
 		s2.calculateActiveAreas()
 		s2.calculateCheapestWins(true, false)
-		s2.evaluate("AFTER BUILD")
+		s2.evaluate("AFTER BUILD", true)
 		fmt.Fprintf(os.Stderr, "%d: BUILD eval change: %.1f\n", g.Turn, s2.Eval-eval)
 		if s2.Eval-eval > -EvalTolerance {
 			eval = s2.Eval
@@ -2457,7 +2470,7 @@ func naiveAlgo(s *State) *State {
 	if len(s2.Commands) > 0 {
 		s2.calculateActiveAreas()
 		s2.calculateCheapestWins(true, false)
-		s2.evaluate("AFTER MOVE")
+		s2.evaluate("AFTER MOVE", true)
 		fmt.Fprintf(os.Stderr, "%d: MOVE eval change: %.1f\n", g.Turn, s2.Eval-eval)
 		if s2.Eval-eval > -EvalTolerance {
 			eval = s2.Eval
@@ -2491,7 +2504,7 @@ func simIterativeDeepeningAlgo(s *State) *State {
 		s2 = s2.trainUnits(IdOp, true, true, true /* eval only */)
 	}
 	s2.calculateCheapestWins(true, false)
-	s2.evaluate("Sim: DO NOTHING")
+	s2.evaluate("Sim: DO NOTHING", true)
 
 	s.SimLevel = 0
 	s.SimLabel = "0"
@@ -2577,7 +2590,15 @@ func simulateScenario(parent *State, label string, scenarioName string, build bo
 	// eval
 	s.calculateActiveAreas()
 	s.calculateCheapestWins(true, false)
-	s.evaluate(scenarioName)
+	s.evaluate(scenarioName, true)
+	// next turn - change all -1 unit ids to simulated new ids
+	for i := 0; i < s.NbUnits; i++ {
+		u := s.Units[i]
+		if u.Id == -1 {
+			s.MaxUnitId += 1
+			u.Id = s.MaxUnitId
+		}
+	}
 	// add to scenarios
 	parent.SimChildren = append(parent.SimChildren, s)
 }
@@ -2616,7 +2637,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "TURN %d ----------------------------------------\n", g.Turn)
 		won = s.calculateCheapestWins(true, true)
 		if !won {
-			s.evaluate("NEW TURN")
+			s.evaluate("NEW TURN", true)
 			fmt.Fprintf(os.Stderr, "%d: Eval: %.1f, change: %.1f\n", g.Turn, s.Eval, s.Eval-g.Eval)
 			g.Eval = s.Eval
 
