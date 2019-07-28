@@ -19,26 +19,26 @@ const (
 	CurrentAlgo = AlgoSimIterativeDeepening
 	//CurrentAlgo = AlgoNaive
 
-	SimMaxDepth                = 1
-	NbEvaluatedTrainCandidates = 10
-	OpTrain                    = true
+	SimMaxDepth                  = 1
+	MeNbEvaluatedTrainCandidates = 10
+	OpNbEvaluatedTrainCandidates = 2
+	OpTrain                      = true
 
 	// debug
-	DebugEval          = false
-	DebugEvalDetail    = false
-	DebugActiveArea    = false
-	DebugCapturable    = false
-	DebugNeutral       = false
-	DebugMove          = false
-	DebugTrain         = false
-	DebugBuildMine     = false
-	DebugBuildTower    = false
-	DebugDistGrid      = false
-	DebugCostGrid      = false
-	DebugCostDirGrid   = false
-	DebugChainTrainWin = false
-	DebugOp            = false
-	DebugSim           = false
+	DebugEval        = false
+	DebugEvalDetail  = false
+	DebugActiveArea  = false
+	DebugCapturable  = false
+	DebugNeutral     = false
+	DebugMove        = false
+	DebugTrain       = false
+	DebugBuildMine   = false
+	DebugBuildTower  = false
+	DebugDistGrid    = false
+	DebugCostGrid    = false
+	DebugCostDirGrid = false
+	DebugOp          = false
+	DebugSim         = false
 
 	//options
 	StandGroundL1 = true
@@ -367,7 +367,7 @@ func (this *Position) diagonalNeighbour(dir1 int, dir2 int) *Position {
 		if this.X < GridDim-1 && this.Y > 0 {
 			return &Position{X: this.X + 1, Y: this.Y - 1}
 		}
-	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir2 == DirDown:
+	case dir1 == DirLeft && dir2 == DirDown || dir2 == DirLeft && dir1 == DirDown:
 		if this.X > 0 && this.Y < GridDim-1 {
 			return &Position{X: this.X - 1, Y: this.Y + 1}
 		}
@@ -438,7 +438,7 @@ type Command struct {
 }
 
 func (c *Command) String() string {
-	return fmt.Sprintf("%s:%d(%d,%d)", c.Type, c.Info, c.X, c.Y)
+	return fmt.Sprintf("%v:%d(%d,%d)", c.Type, c.Info, c.X, c.Y)
 }
 
 func (c *Command) Pos() *Position {
@@ -470,9 +470,6 @@ type Player struct {
 	MinUnitDistGoal int       // distance to goal from the closest unit
 	MinDistGoal     *Position // distance to goal from the closest active cell
 	MinDistGoalUnit *Unit     // reference to unit if present on the closest active cell
-
-	MinChainTrainWinCost    int
-	ActualChainTrainWinCost int
 
 	CheapestWinCost  int
 	CheapestWinStart *Position
@@ -507,9 +504,6 @@ func (p *Player) deepCopy() *Player {
 		MinUnitDistGoal: p.MinUnitDistGoal,
 		MinDistGoal:     copyPosition(p.MinDistGoal),
 		MinDistGoalUnit: copyUnit(p.MinDistGoalUnit),
-
-		MinChainTrainWinCost:    p.MinChainTrainWinCost,
-		ActualChainTrainWinCost: p.ActualChainTrainWinCost,
 
 		CheapestWinCost:  p.CheapestWinCost,
 		CheapestWinStart: p.CheapestWinStart, // readonly, shouldn't need to deepCopy
@@ -857,14 +851,8 @@ func (p *Player) isEnemyActiveCell(cell rune) bool {
 }
 
 func (s *State) calculateCheapestWins(myMoveFirst bool, execute bool) bool {
-	won := false
-	if EvalUseCheapestWin {
-		won = s.calculateCheapestWin(IdMe, myMoveFirst, execute)
-		s.calculateCheapestWin(IdOp, true, false)
-	} else {
-		won = s.calculateChainTrainWin(IdMe, myMoveFirst, execute)
-		s.calculateChainTrainWin(IdOp, true, false)
-	}
+	won := s.calculateCheapestWin(IdMe, myMoveFirst, execute)
+	s.calculateCheapestWin(IdOp, true, false)
 	return won
 }
 
@@ -1034,86 +1022,18 @@ func (s *State) calculateCheapestWin(playerId int, moveFirst bool, execute bool)
 	return true
 }
 
-func (s *State) calculateChainTrainWin(playerId int, moveFirst bool, execute bool) bool {
-	p := s.player(playerId)
-	debug(DebugChainTrainWin, "%d: [%s] Calculating ChainTrainWin: Gold=%d MinTrainChainCost=%d\n", g.Turn, p.Game.Name, p.Gold, p.MinDistGoal.Dist*CostTrain1)
-	pos := p.MinDistGoal
-	unitCell := pos.getCell(p.State.UnitGrid)
-	isMyUnit := p.isMyUnit(unitCell)
-	posDist := pos.getIntCell(p.Game.DistGrid)
-	actualCost := 0
-	cmds := &CommandSelector{}
-	//fmt.Fprintf(os.Stderr, "start loop\n")
-	for posDist != 0 {
-		dir := pos.getIntCell(p.Game.DirGrid)
-		//fmt.Fprintf(os.Stderr, "(%d,%d): posDist=%d dir=%d\n", pos.X, pos.Y, posDist, dir)
-		fromPos := pos
-		pos = pos.neighbour(dir)
-		posDist = pos.getIntCell(p.Game.DistGrid)
-		cell := pos.getCell(p.State.Grid)
-		unitCell := pos.getCell(p.State.UnitGrid)
-		level := 1
-		if p.isEnemyUnitLevel1(unitCell) {
-			level = 2
-		}
-		if p.isEnemyProtectedAny(cell) || p.isEnemyInactiveTower(cell) || p.isEnemyUnitLevel2or3(unitCell) {
-			level = 3
-		}
-		if moveFirst && isMyUnit && level == 1 { // fix to account for more free first moves of level 2 and 3
-			// first move for free
-			debug(DebugChainTrainWin, "\t[%s] using free move first to move to (%d,%d) level=%d\n", p.Game.Name, pos.X, pos.Y, level)
-			// add move command
-			if execute {
-				cmds.appendMove(p.MinDistGoalUnit, fromPos, pos, posDist)
-			}
-		} else {
-			actualCost += costTrain(level)
-			if execute {
-				cmds.appendTrain(level, pos, posDist)
-			}
-		}
-		moveFirst = false
-	}
-	p.ActualChainTrainWinCost = actualCost
-	//fmt.Fprintf(os.Stderr, "end loop\n")
-	if p.Gold < actualCost {
-		debug(DebugChainTrainWin, "\t[%s] Abort: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-		return false
-	}
-	debug(DebugChainTrainWin, "\t[%s] Proceed: Gold=%d ActualCost=%d\n", p.Game.Name, p.Gold, actualCost)
-	if !execute {
-		return false
-	}
-	for i, cmd := range cmds.Candidates {
-		if cmd.Level == 0 { //move command
-			s.addMove(playerId, cmd.Unit, cmd.From, cmd.To)
-			debug(DebugChainTrainWin, "\t%d: value %d, move %d to (%d,%d)\n", i, cmd.Value, cmd.Unit.Id, cmd.To.X, cmd.To.Y)
-		} else {
-			s.addTrain(playerId, cmd.To, cmd.Level)
-			debug(DebugChainTrainWin, "\t%d: value %d, level %d at (%d,%d)\n", i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
-		}
-	}
-	return true
-}
-
 func (p *Player) evaluate() {
 	p.RoundsToHqCapture = 100.0
-	if p.ActualChainTrainWinCost < p.Gold {
+	if p.CheapestWinCost < p.Gold {
 		p.RoundsToHqCapture = 0.0
 	} else if p.expectedIncome() > 0 {
-		goldToWin := p.ActualChainTrainWinCost
-		if EvalUseCheapestWin {
-			goldToWin = p.CheapestWinCost
-		}
-		p.RoundsToHqCapture = float64(goldToWin-p.Gold) / float64(p.expectedIncome())
+		p.RoundsToHqCapture = float64(p.CheapestWinCost-p.Gold) / float64(p.expectedIncome())
 	}
-
 	p.MilitaryPower = p.NbUnits3*CostTrain3 + p.NbUnits2*CostTrain2 + p.NbUnits1*CostTrain1 + p.Gold
 	p.ExpectedMilitaryPower = p.MilitaryPower + (100-g.Turn)*p.income()
 	if p.ExpectedMilitaryPower < 0 {
 		p.ExpectedMilitaryPower = 0
 	}
-
 }
 
 //---------------------------------------------------------------------------------------
@@ -1398,13 +1318,11 @@ func (s *State) evaluate(label string, enableDebug bool) {
 	s.Me.evaluate()
 	s.Op.evaluate()
 
-	if enableDebug && (DebugEvalDetail || DebugCostGrid || DebugChainTrainWin) {
-		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Me.Game.Name,
-			s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y,
-			s.Me.ActualChainTrainWinCost, s.Me.MinDistGoal.X, s.Me.MinDistGoal.Y)
-		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d; CTW=%d From=%d,%d\n", s.Op.Game.Name,
-			s.Op.CheapestWinCost, s.Op.CheapestWinStart.X, s.Op.CheapestWinStart.Y,
-			s.Op.ActualChainTrainWinCost, s.Op.MinDistGoal.X, s.Op.MinDistGoal.Y)
+	if enableDebug && (DebugEvalDetail || DebugCostGrid) {
+		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d\n", s.Me.Game.Name,
+			s.Me.CheapestWinCost, s.Me.CheapestWinStart.X, s.Me.CheapestWinStart.Y)
+		fmt.Fprintf(os.Stderr, "\t[%s] CheapW=%d From=%d,%d\n", s.Op.Game.Name,
+			s.Op.CheapestWinCost, s.Op.CheapestWinStart.X, s.Op.CheapestWinStart.Y)
 	}
 	s.HqCaptureEval = EvalHqCaptureFactor * (s.Op.RoundsToHqCapture - s.Me.RoundsToHqCapture) * (1 - g.DiscountFactor)
 	s.MilitaryPowerEval = float64(s.Me.ExpectedMilitaryPower-s.Op.ExpectedMilitaryPower) * g.DiscountFactor
@@ -1637,10 +1555,6 @@ func (s *State) init() {
 	}
 	s.NeutralPct = float32(s.Neutral) / float32(g.InitNeutralArea)
 	debug(DebugNeutral, "%d: NeutralPct=%v\n", g.Turn, s.NeutralPct)
-	s.Me.MinChainTrainWinCost = s.Me.MinDistGoal.Dist * CostTrain1
-	s.Me.ActualChainTrainWinCost = s.Me.MinChainTrainWinCost
-	s.Op.MinChainTrainWinCost = s.Op.MinDistGoal.Dist * CostTrain1
-	s.Op.ActualChainTrainWinCost = s.Op.MinChainTrainWinCost
 	// load buildings
 	fmt.Scan(&s.NbBuildings)
 	s.Buildings = make([]*Building, s.NbBuildings)
@@ -1726,6 +1640,13 @@ func debugTrain(playerId int) bool {
 		return DebugTrain
 	}
 	return DebugTrain && DebugOp
+}
+
+func nbEvalTrainCandidates(playerId int) int {
+	if playerId == IdMe {
+		return MeNbEvaluatedTrainCandidates
+	}
+	return OpNbEvaluatedTrainCandidates
 }
 
 func (s *State) addTrain(playerId int, at *Position, level int) {
@@ -2275,7 +2196,7 @@ func (s *State) trainUnits(playerId int, l1 bool, l23 bool, evalOnly bool) *Stat
 		cost := costTrain(cmd.Level)
 		debug(debugTrain(playerId), "%d: %dth TRAIN candidate: value %d, level %d at (%d,%d)\n", g.Turn, i, cmd.Value, cmd.Level, cmd.To.X, cmd.To.Y)
 		debug(debugTrain(playerId), "\t%d: cost %d, gold %d, income %d, upkeep %d\n", i, cost, p.Gold, p.income(), p.Upkeep)
-		if i < NbEvaluatedTrainCandidates && cost <= p.Gold && p.income() >= p.Upkeep {
+		if i < nbEvalTrainCandidates(playerId) && cost <= p.Gold && p.income() >= p.Upkeep {
 			eval := s.Eval
 			s2 := s.deepCopy()
 			p2 := s2.player(playerId)
@@ -2379,7 +2300,7 @@ func (s *State) findTowerSpotBeyondDist1(playerId int, pos *Position) *Position 
 		debug(DebugBuildTower, "\t find tower dist1: traversing (%d,%d)\n", pos.X, pos.Y)
 	}
 	if !pos.sameAs(p.Game.Hq) {
-		debug(DebugBuildTower, "%d: Tower candidate at (%d,%d)\n", pos.X, pos.Y)
+		debug(DebugBuildTower, "%d: Tower candidate at (%d,%d)\n", g.Turn, pos.X, pos.Y)
 		return pos
 	}
 	return nil
@@ -2408,7 +2329,7 @@ func (s *State) buildMinesAndTowers(playerId int) {
 		} else if p.NbTowers == 0 {
 			//do nothing else
 		} else if spot = s.findTowerSpotBeyondDist2(playerId, p.Other.CheapestWinStart); spot != nil {
-			// build towers on Op ChainTrainWin path
+			// build towers on Op cheapest win path
 			s.addBuildTower(playerId, spot)
 		} else if p.NbTowers > 0 {
 			debug(DebugBuildTower, "\tCouldn't find a tower spot beyond dist 2 starting at (%d,%d)\n", p.Other.CheapestWinStart.X, p.Other.CheapestWinStart.Y)
